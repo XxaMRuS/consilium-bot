@@ -32,9 +32,6 @@ import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Импортируем твой консилиум
-from ai_work import start_consilium, stats as consilium_stats, history
-
 # Логирование
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
