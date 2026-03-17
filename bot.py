@@ -1,8 +1,10 @@
 import os
 import logging
+import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from ai_work import start_consilium, stats as consilium_stats, history
+asyncio.set_event_loop(asyncio.new_event_loop())  # NEW
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
