@@ -26,77 +26,313 @@ ENABLED_PROVIDERS = {
 if not all([YANDEX_API_KEY, YANDEX_FOLDER_ID, DEEPSEEK_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY]):
     raise ValueError("❌ Не все ключи найдены в .env! Проверь файл.")
 
-# ... (весь остальной код, который был у тебя в ai_work.py)
-import os
-import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-
-# Логирование
+# === НАСТРОЙКА ЛОГИРОВАНИЯ ===
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    filename='consilium.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    encoding='utf-8'
 )
-logger = logging.getLogger(__name__)
+console = logging.StreamHandler()
+console.setLevel(logging.INFO)
+console.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logging.getLogger('').addHandler(console)
 
-# Токен из переменной окружения
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+REQUEST_TIMEOUT = (10, 30)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🚀 Привет! Я твой AI-консилиум. Задай любой вопрос, и я постараюсь дать наилучший ответ.\n\n"
-        "Команды:\n"
-        "/stats — статистика работы\n"
-        "/reset — сбросить историю диалога"
-    )
+# === АКТУАЛЬНЫЕ БЕСПЛАТНЫЕ МОДЕЛИ OPENROUTER ===
+FREE_MODELS = [
+    "stepfun/step-3.5-flash:free",
+    "arcee-ai/trinity-large-preview:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "z-ai/glm-4.5-air:free",
+    "nvidia/nemotron-3-nano-30b-a3b:free",
+    "arcee-ai/trinity-mini:free",
+    "nvidia/nemotron-nano-12b-v2-vl:free",
+    "nvidia/nemotron-nano-9b-v2:free",
+    "qwen/qwen3-coder:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "openai/gpt-oss-120b:free",
+    "liquid/lfm-2.5-1.2b-thinking:free",
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+    "google/gemma-3-27b-it:free",
+    "qwen/qwen3-4b:free",
+    "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "google/gemma-3-4b-it:free",
+    "minimax/minimax-m2.5:free",
+    "google/gemma-3-12b-it:free",
+    "google/gemma-3n-e4b-it:free",
+    "google/gemma-3n-e2b-it:free",
+    "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+    "openrouter/free"
+]
 
-async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вывод статистики"""
-    text = "📊 **Статистика работы:**\n"
-    text += f"Всего попыток запросов: {consilium_stats['attempts']}\n"
-    text += f"Успешно: {consilium_stats['success']}\n"
-    text += f"Ошибок: {consilium_stats['failures']}\n"
-    text += "Использованные модели:\n"
-    for model, count in consilium_stats['models_used'].items():
-        text += f"  {model}: {count} раз(а)\n"
-    await update.message.reply_text(text)
+# === ИСТОРИЯ ДИАЛОГА ===
+history = deque(maxlen=5)
 
-async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Сброс истории диалога"""
-    history.clear()
-    await update.message.reply_text("🔄 История диалога очищена.")
+# === СТАТИСТИКА ===
+stats = {
+    "attempts": 0,
+    "success": 0,
+    "failures": 0,
+    "models_used": {}
+}
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_question = update.message.text
-    logger.info(f"Вопрос от {update.effective_user.id}: {user_question}")
+def log_error(context, error):
+    logging.error(f"{context}: {error}")
 
-    await update.message.chat.send_action(action="typing")
+def log_info(message):
+    logging.info(message)
 
+def update_stats(success, model_name=None):
+    stats["attempts"] += 1
+    if success:
+        stats["success"] += 1
+        if model_name:
+            stats["models_used"][model_name] = stats["models_used"].get(model_name, 0) + 1
+    else:
+        stats["failures"] += 1
+
+# === OPENROUTER ===
+def ask_openrouter(text, system_prompt=None, role_name="unknown"):
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "http://localhost:8000",
+        "X-Title": "AI Consilium"
+    }
+    last_error = None
+    for model in FREE_MODELS:
+        try:
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": text})
+            data = {"model": model, "messages": messages}
+            response = requests.post(url, json=data, headers=headers, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+            result = response.json()
+            content = result['choices'][0]['message']['content']
+            log_info(f"OpenRouter {role_name} использовал {model}")
+            update_stats(True, model)
+            return content
+        except Exception as e:
+            last_error = e
+            log_error(f"OpenRouter {role_name} {model} ошибка", e)
+            update_stats(False, model)
+            continue
+    raise Exception(f"Все OpenRouter модели недоступны: {last_error}")
+
+# === GROQ ===
+def ask_groq(text, system_prompt=None, role_name="unknown"):
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    models = [
+        "llama-3.3-70b-versatile",
+        "mixtral-8x7b-32768",
+        "gemma2-9b-it"
+    ]
+    last_error = None
+    for model in models:
+        try:
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": text})
+            data = {
+                "model": model,
+                "messages": messages,
+                "temperature": 0.7,
+                "max_tokens": 4000
+            }
+            response = requests.post(url, json=data, headers=headers, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+            content = response.json()['choices'][0]['message']['content']
+            log_info(f"Groq {role_name} использовал {model}")
+            update_stats(True, f"Groq/{model}")
+            return content
+        except Exception as e:
+            last_error = e
+            log_error(f"Groq {role_name} {model} ошибка", e)
+            update_stats(False, f"Groq/{model}")
+            continue
+    raise Exception(f"Все Groq модели недоступны: {last_error}")
+
+# === ЯНДЕКС ===
+def ask_yandex(text):
+    url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
+    headers = {"Authorization": f"Api-Key {YANDEX_API_KEY}"}
+    data = {
+        "modelUri": f"gpt://{YANDEX_FOLDER_ID}/yandexgpt-lite",
+        "completionOptions": {"stream": False, "temperature": 0.6, "maxTokens": 2000},
+        "messages": [{"role": "user", "text": text}]
+    }
     try:
-        answer = start_consilium(user_question)
-        # Разбиваем длинные сообщения
-        if len(answer) > 4000:
-            for i in range(0, len(answer), 4000):
-                await update.message.reply_text(answer[i:i+4000])
-        else:
-            await update.message.reply_text(answer)
+        response = requests.post(url, json=data, headers=headers, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        res_json = response.json()
+        content = res_json['result']['alternatives'][0]['message']['text']
+        log_info("Yandex успешно ответил")
+        update_stats(True, "YandexGPT")
+        return content
     except Exception as e:
-        logger.exception("Ошибка при обработке вопроса")
-        await update.message.reply_text("❌ Произошла ошибка. Попробуй позже.")
+        log_error("Yandex error", e)
+        update_stats(False, "YandexGPT")
+        raise
 
-def main():
-    if not TOKEN:
-        raise ValueError("❌ Нет токена! Добавь TELEGRAM_BOT_TOKEN в .env")
+# === СТАРЫЙ DEEPSEEK (запасной) ===
+def ask_deepseek(text):
+    url = "https://api.deepseek.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}"}
+    data = {
+        "model": "deepseek-chat",
+        "messages": [{"role": "user", "content": text}]
+    }
+    try:
+        response = requests.post(url, json=data, headers=headers, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        content = response.json()['choices'][0]['message']['content']
+        log_info("DeepSeek успешно ответил")
+        update_stats(True, "DeepSeek (old)")
+        return content
+    except Exception as e:
+        log_error("DeepSeek error", e)
+        update_stats(False, "DeepSeek (old)")
+        raise
 
-    app = Application.builder().token(TOKEN).build()
+# === СТАРЫЙ GEMINI (запасной) ===
+def ask_gemini(text):
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    try:
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=text
+        )
+        content = response.text
+        log_info("Gemini успешно ответил")
+        update_stats(True, "Gemini (old)")
+        return content
+    except Exception as e:
+        log_error("Gemini error", e)
+        update_stats(False, "Gemini (old)")
+        raise
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stats", stats_command))
-    app.add_handler(CommandHandler("reset", reset_command))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+# === УНИВЕРСАЛЬНАЯ ФУНКЦИЯ: ПРОБУЕТ ВСЕХ ПРОВАЙДЕРОВ ПО ОЧЕРЕДИ ===
+def ask_any_ai(text, system_prompt=None, role_name="unknown"):
+    """Пытается получить ответ только от включённых провайдеров"""
+    if ENABLED_PROVIDERS["openrouter"]:
+        try:
+            return ask_openrouter(text, system_prompt, role_name)
+        except Exception as e:
+            log_error(f"OpenRouter {role_name} failed", e)
+    if ENABLED_PROVIDERS["groq"]:
+        try:
+            return ask_groq(text, system_prompt, role_name)
+        except Exception as e:
+            log_error(f"Groq {role_name} failed", e)
+    if ENABLED_PROVIDERS["yandex"]:
+        try:
+            full_text = text
+            if system_prompt:
+                full_text = f"{system_prompt}\n\n{text}"
+            return ask_yandex(full_text)
+        except Exception as e:
+            log_error(f"Yandex {role_name} failed", e)
+    if ENABLED_PROVIDERS["deepseek_old"]:
+        try:
+            full_text = text
+            if system_prompt:
+                full_text = f"{system_prompt}\n\n{text}"
+            return ask_deepseek(full_text)
+        except Exception as e:
+            log_error(f"DeepSeek(old) {role_name} failed", e)
+    if ENABLED_PROVIDERS["gemini_old"]:
+        try:
+            full_text = text
+            if system_prompt:
+                full_text = f"{system_prompt}\n\n{text}"
+            return ask_gemini(full_text)
+        except Exception as e:
+            log_error(f"Gemini(old) {role_name} failed", e)
+    raise Exception("Все включённые AI недоступны")
 
-    logger.info("🚀 Бот запущен...")
-    app.run_polling()
+# === ПОЛУЧЕНИЕ ПЕРВИЧНОГО ОТВЕТА (с историей) ===
+def get_primary_answer(question):
+    context = ""
+    if history:
+        context = "Предыдущий диалог:\n"
+        for i, (q, a) in enumerate(history, 1):
+            context += f"Вопрос {i}: {q}\nОтвет {i}: {a}\n"
+        context += "\n"
+    full_question = context + question if context else question
+    try:
+        ans = ask_any_ai(full_question, role_name="primary")
+        return ans, "auto"
+    except Exception as e:
+        log_error("Все AI недоступны для primary", e)
+        return None, None
 
+# === АНАЛИЗ ===
+def get_analysis(question, primary_answer, primary_source):
+    prompt = f"Вопрос пользователя: {question}\nОтвет ({primary_source}): {primary_answer}\nПроверь этот ответ и предложи улучшения, укажи на возможные ошибки или добавь важные детали."
+    try:
+        ans = ask_any_ai(prompt, role_name="analyst")
+        return ans
+    except Exception as e:
+        log_error("Analysis failed (все AI недоступны)", e)
+        return None
+
+# === СИНТЕЗ ===
+def get_synthesis(question, primary_answer, primary_source, analysis=None):
+    if analysis:
+        prompt = f"Вопрос: {question}\nМнение 1 (от {primary_source}): {primary_answer}\nМнение 2 (анализ): {analysis}\nОбъедини оба мнения в один идеальный ответ. Будь полезным и точным."
+    else:
+        prompt = f"Вопрос: {question}\nОтвет (от {primary_source}): {primary_answer}\nУлучши этот ответ, сделай его более полным и понятным."
+    try:
+        ans = ask_any_ai(prompt, role_name="synthesizer")
+        return ans
+    except Exception as e:
+        log_error("Synthesis failed (все AI недоступны)", e)
+        return primary_answer
+
+# === ВЫВОД СТАТИСТИКИ ===
+def print_stats():
+    print("\n--- СТАТИСТИКА РАБОТЫ КОНСИЛИУМА ---")
+    print(f"Всего попыток запросов: {stats['attempts']}")
+    print(f"Успешно: {stats['success']}")
+    print(f"Ошибок: {stats['failures']}")
+    print("Использованные модели:")
+    for model, count in stats['models_used'].items():
+        print(f"  {model}: {count} раз(а)")
+    print("------------------------------------\n")
+
+# === ГЛАВНАЯ ФУНКЦИЯ ===
+def start_consilium(question):
+    log_info(f"Новый запрос: {question}")
+    primary_answer, primary_source = get_primary_answer(question)
+    if not primary_answer:
+        print_stats()
+        return "❌ Не удалось получить ответ ни от одного AI."
+    analysis = get_analysis(question, primary_answer, primary_source)
+    final_answer = get_synthesis(question, primary_answer, primary_source, analysis)
+    history.append((question, final_answer))
+    print_stats()
+    return final_answer
+
+# === ЗАПУСК (если файл запускают напрямую) ===
 if __name__ == "__main__":
-    main()
+    print("🚀 Добро пожаловать в AI-консилиум (версия с улучшениями)!")
+    print("(напиши 'выход', 'exit' или 'quit' для выхода)")
+    while True:
+        user_input = input("\n💬 Твой вопрос: ")
+        if user_input.lower() in ['выход', 'exit', 'quit']:
+            print("👋 До встречи! Возвращайся с новыми вопросами.")
+            break
+        print("\n--- РЕЗУЛЬТАТ КОНСИЛИУМА ---\n")
+        result = start_consilium(user_input)
+        print(result)
