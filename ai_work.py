@@ -1,7 +1,6 @@
 import os
 import requests
 import logging
-import google.generativeai as genai
 from collections import deque
 from dotenv import load_dotenv
 
