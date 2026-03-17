@@ -7,7 +7,25 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from ai_work import start_consilium, stats as consilium_stats, history
 import re
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup  # NEW
 from photo_processor import convert_to_sketch, convert_to_anime, convert_to_sepia, convert_to_hard_rock
+
+# ========== МЕНЮ С КНОПКАМИ ==========
+async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Отправляет сообщение с кнопками для выбора стиля."""
+    keyboard = [
+        [InlineKeyboardButton("✏️ Карандаш", callback_data='sketch'),
+         InlineKeyboardButton("🎌 Аниме", callback_data='anime')],
+        [InlineKeyboardButton("🟫 Сепия", callback_data='sepia'),
+         InlineKeyboardButton("🤘 Хард-рок", callback_data='hardrock')],
+        [InlineKeyboardButton("🟩 Пиксель (Minecraft)", callback_data='pixel'),
+         InlineKeyboardButton("🌈 Неон", callback_data='neon')],
+        [InlineKeyboardButton("🖼️ Масло", callback_data='oil'),
+         InlineKeyboardButton("💧 Акварель", callback_data='watercolor')],
+        [InlineKeyboardButton("🧸 Мультяшный", callback_data='cartoon')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("🎨 Выбери стиль для фото:", reply_markup=reply_markup)
 
 def clean_markdown(text):
     """
@@ -135,6 +153,21 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif effect == 'hardrock':
             output = convert_to_hard_rock(photo_bytes)
             caption = "Хард-рок стиль готов!"
+        elif effect == 'pixel':
+            output = convert_to_pixel(photo_bytes)
+            caption = "Пиксельный Minecraft-стиль готов!"
+        elif effect == 'neon':
+            output = convert_to_neon(photo_bytes)
+            caption = "Неоновые цвета!"
+        elif effect == 'oil':
+            output = convert_to_oil(photo_bytes)
+            caption = "Масляная живопись!"
+        elif effect == 'watercolor':
+            output = convert_to_watercolor(photo_bytes)
+            caption = "Акварельный эффект!"
+        elif effect == 'cartoon':
+            output = convert_to_cartoon(photo_bytes)
+            caption = "Мультяшный стиль!"
         else:
             await update.message.reply_text("Неизвестный эффект.")
             return
@@ -145,6 +178,32 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("Ошибка при обработке фото")
         await update.message.reply_text("❌ Не удалось обработать фото. Попробуй другое.")
 # ========== КОНЕЦ НОВЫХ ОБРАБОТЧИКОВ ==========
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обрабатывает нажатия на инлайн-кнопки."""
+    query = update.callback_query
+    await query.answer()
+    
+    # Сохраняем выбранный эффект в user_data
+    context.user_data['effect'] = query.data
+    effect_names = {
+        'sketch': 'карандашный рисунок',
+        'anime': 'аниме',
+        'sepia': 'сепия',
+        'hardrock': 'хард-рок',
+        'pixel': 'пиксельный (Minecraft)',
+        'neon': 'неон',
+        'oil': 'масло',
+        'watercolor': 'акварель',
+        'cartoon': 'мультяшный'
+    }
+    name = effect_names.get(query.data, query.data)
+    await query.edit_message_text(f"✅ Выбран стиль: {name}\nТеперь отправь фото!")
+
+async def set_effect(update: Update, context: ContextTypes.DEFAULT_TYPE, effect: str):
+    """Устанавливает эффект и просит отправить фото."""
+    context.user_data['effect'] = effect
+    await update.message.reply_text(f"Отправь фото для обработки в стиле {effect}!")
+
 # === ЗАПУСК БОТА ===
 def main():
     if not TOKEN:
@@ -168,6 +227,30 @@ def main():
     app.add_handler(CommandHandler("sepia", sepia_command))
     app.add_handler(CommandHandler("hardrock", hardrock_command))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("menu", show_menu))
+    app.add_handler(CommandHandler("pixel", lambda u,c: set_effect(u,c,'pixel')))
+    app.add_handler(CommandHandler("neon", lambda u,c: set_effect(u,c,'neon')))
+    app.add_handler(CommandHandler("oil", lambda u,c: set_effect(u,c,'oil')))
+    app.add_handler(CommandHandler("watercolor", lambda u,c: set_effect(u,c,'watercolor')))
+    app.add_handler(CommandHandler("cartoon", lambda u,c: set_effect(u,c,'cartoon')))
+    app.add_handler(CallbackQueryHandler(button_handler))
+
+    async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает список всех команд и кнопки."""
+    help_text = (
+        "🤖 **Доступные команды:**\n\n"
+        "🔹 `/start` - Приветствие\n"
+        "🔹 `/stats` - Статистика работы\n"
+        "🔹 `/reset` - Сброс истории\n"
+        "🔹 `/menu` - Меню с кнопками для фото\n"
+        "🔹 `/help` - Это сообщение\n\n"
+        "**Команды для фото:**\n"
+        "`/sketch`, `/anime`, `/sepia`, `/hardrock`,\n"
+        "`/pixel`, `/neon`, `/oil`, `/watercolor`, `/cartoon`\n\n"
+        "🎯 После команды отправь фото, и я обработаю его!"
+    )
+    await update.message.reply_text(help_text, parse_mode='Markdown')
 
     logger.info("🚀 Бот запущен...")
     app.run_polling()
