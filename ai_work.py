@@ -222,19 +222,20 @@ def ask_gemini(text):
         update_stats(False, "Gemini (old)")
         raise
 
-# === УНИВЕРСАЛЬНАЯ ФУНКЦИЯ: ПРОБУЕТ ВСЕХ ПРОВАЙДЕРОВ ПО ОЧЕРЕДИ ===
+# === УНИВЕРСАЛЬНАЯ ФУНКЦИЯ ===
 def ask_any_ai(text, system_prompt=None, role_name="unknown"):
-    """Пытается получить ответ только от включённых провайдеров"""
     if ENABLED_PROVIDERS["openrouter"]:
         try:
             return ask_openrouter(text, system_prompt, role_name)
         except Exception as e:
             log_error(f"OpenRouter {role_name} failed", e)
+
     if ENABLED_PROVIDERS["groq"]:
         try:
             return ask_groq(text, system_prompt, role_name)
         except Exception as e:
             log_error(f"Groq {role_name} failed", e)
+
     if ENABLED_PROVIDERS["yandex"]:
         try:
             full_text = text
@@ -243,6 +244,7 @@ def ask_any_ai(text, system_prompt=None, role_name="unknown"):
             return ask_yandex(full_text)
         except Exception as e:
             log_error(f"Yandex {role_name} failed", e)
+
     if ENABLED_PROVIDERS["deepseek_old"]:
         try:
             full_text = text
@@ -251,6 +253,7 @@ def ask_any_ai(text, system_prompt=None, role_name="unknown"):
             return ask_deepseek(full_text)
         except Exception as e:
             log_error(f"DeepSeek(old) {role_name} failed", e)
+
     if ENABLED_PROVIDERS["gemini_old"]:
         try:
             full_text = text
@@ -259,9 +262,9 @@ def ask_any_ai(text, system_prompt=None, role_name="unknown"):
             return ask_gemini(full_text)
         except Exception as e:
             log_error(f"Gemini(old) {role_name} failed", e)
+
     raise Exception("Все включённые AI недоступны")
 
-# === ПОЛУЧЕНИЕ ПЕРВИЧНОГО ОТВЕТА (с историей) ===
 def get_primary_answer(question):
     context = ""
     if history:
@@ -277,7 +280,6 @@ def get_primary_answer(question):
         log_error("Все AI недоступны для primary", e)
         return None, None
 
-# === АНАЛИЗ ===
 def get_analysis(question, primary_answer, primary_source):
     prompt = f"Вопрос пользователя: {question}\nОтвет ({primary_source}): {primary_answer}\nПроверь этот ответ и предложи улучшения, укажи на возможные ошибки или добавь важные детали."
     try:
@@ -287,7 +289,6 @@ def get_analysis(question, primary_answer, primary_source):
         log_error("Analysis failed (все AI недоступны)", e)
         return None
 
-# === СИНТЕЗ ===
 def get_synthesis(question, primary_answer, primary_source, analysis=None):
     if analysis:
         prompt = f"Вопрос: {question}\nМнение 1 (от {primary_source}): {primary_answer}\nМнение 2 (анализ): {analysis}\nОбъедини оба мнения в один идеальный ответ. Будь полезным и точным."
@@ -300,7 +301,6 @@ def get_synthesis(question, primary_answer, primary_source, analysis=None):
         log_error("Synthesis failed (все AI недоступны)", e)
         return primary_answer
 
-# === ВЫВОД СТАТИСТИКИ ===
 def print_stats():
     print("\n--- СТАТИСТИКА РАБОТЫ КОНСИЛИУМА ---")
     print(f"Всего попыток запросов: {stats['attempts']}")
@@ -311,28 +311,16 @@ def print_stats():
         print(f"  {model}: {count} раз(а)")
     print("------------------------------------\n")
 
-# === ГЛАВНАЯ ФУНКЦИЯ ===
 def start_consilium(question):
     log_info(f"Новый запрос: {question}")
     primary_answer, primary_source = get_primary_answer(question)
     if not primary_answer:
         print_stats()
         return "❌ Не удалось получить ответ ни от одного AI."
+
     analysis = get_analysis(question, primary_answer, primary_source)
     final_answer = get_synthesis(question, primary_answer, primary_source, analysis)
+
     history.append((question, final_answer))
     print_stats()
     return final_answer
-
-# === ЗАПУСК (если файл запускают напрямую) ===
-if __name__ == "__main__":
-    print("🚀 Добро пожаловать в AI-консилиум (версия с улучшениями)!")
-    print("(напиши 'выход', 'exit' или 'quit' для выхода)")
-    while True:
-        user_input = input("\n💬 Твой вопрос: ")
-        if user_input.lower() in ['выход', 'exit', 'quit']:
-            print("👋 До встречи! Возвращайся с новыми вопросами.")
-            break
-        print("\n--- РЕЗУЛЬТАТ КОНСИЛИУМА ---\n")
-        result = start_consilium(user_input)
-        print(result)
