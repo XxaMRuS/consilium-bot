@@ -6,6 +6,13 @@ from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
 
+# === ИНИЦИАЛИЗАЦИЯ ASYNCIO ===
+try:
+    loop = asyncio.get_event_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
