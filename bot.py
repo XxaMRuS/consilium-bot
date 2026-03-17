@@ -7,6 +7,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from ai_work import start_consilium, stats as consilium_stats, history
 import re
+from photo_processor import convert_to_sketch, convert_to_anime, convert_to_sepia, convert_to_hard_rock
 
 def clean_markdown(text):
     """
@@ -95,6 +96,55 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.exception("Ошибка при обработке вопроса")
         await update.message.reply_text("❌ Произошла ошибка. Попробуй позже.")
+        # ========== ОБРАБОТЧИКИ ДЛЯ ФОТО ==========
+async def sketch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Отправь фото, и я сделаю из него карандашный рисунок!")
+    context.user_data['effect'] = 'sketch'
+
+async def anime_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Отправь фото, и я придам ему аниме-стиль!")
+    context.user_data['effect'] = 'anime'
+
+async def sepia_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Отправь фото, и я добавлю тёплый винтажный оттенок!")
+    context.user_data['effect'] = 'sepia'
+
+async def hardrock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Отправь фото, и я сделаю его резким и контрастным!")
+    context.user_data['effect'] = 'hardrock'
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if 'effect' not in context.user_data:
+        await update.message.reply_text("Сначала выбери эффект: /sketch, /anime, /sepia или /hardrock")
+        return
+
+    effect = context.user_data['effect']
+    photo_file = await update.message.photo[-1].get_file()
+    photo_bytes = await photo_file.download_as_bytearray()
+
+    try:
+        if effect == 'sketch':
+            output = convert_to_sketch(photo_bytes)
+            caption = "Карандашный рисунок готов!"
+        elif effect == 'anime':
+            output = convert_to_anime(photo_bytes)
+            caption = "Аниме-стиль применён!"
+        elif effect == 'sepia':
+            output = convert_to_sepia(photo_bytes)
+            caption = "Сепия добавлена!"
+        elif effect == 'hardrock':
+            output = convert_to_hard_rock(photo_bytes)
+            caption = "Хард-рок стиль готов!"
+        else:
+            await update.message.reply_text("Неизвестный эффект.")
+            return
+
+        await update.message.reply_photo(photo=output, caption=caption)
+        # del context.user_data['effect']  # если хочешь, чтобы эффект сбрасывался после одного фото
+    except Exception as e:
+        logger.exception("Ошибка при обработке фото")
+        await update.message.reply_text("❌ Не удалось обработать фото. Попробуй другое.")
+# ========== КОНЕЦ НОВЫХ ОБРАБОТЧИКОВ ==========
 # === ЗАПУСК БОТА ===
 def main():
     if not TOKEN:
@@ -113,6 +163,11 @@ def main():
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("reset", reset_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CommandHandler("sketch", sketch_command))
+    app.add_handler(CommandHandler("anime", anime_command))
+    app.add_handler(CommandHandler("sepia", sepia_command))
+    app.add_handler(CommandHandler("hardrock", hardrock_command))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     logger.info("🚀 Бот запущен...")
     app.run_polling()
