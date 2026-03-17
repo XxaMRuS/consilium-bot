@@ -182,15 +182,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
-         # Создаём цикл событий asyncio (обязательно для Python 3.14+)
+
+    # Создаём цикл событий asyncio (обязательно для Python 3.14+)
     try:
         asyncio.get_event_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-
-    app = Application.builder().token(TOKEN).build()
-    # ... остальной код
 
     app = Application.builder().token(TOKEN).build()
 
