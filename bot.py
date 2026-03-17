@@ -6,6 +6,22 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from ai_work import start_consilium, stats as consilium_stats, history
+import re
+
+def clean_markdown(text):
+    """
+    Удаляет из текста MarkDown-символы: **жирный**, *курсив*, __подчёркнутый__, `код`.
+    Оставляет только чистый текст.
+    """
+    # Убираем **жирный**
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+    # Убираем *курсив*
+    text = re.sub(r'\*(.*?)\*', r'\1', text)
+    # Убираем __подчёркнутый__
+    text = re.sub(r'__(.*?)__', r'\1', text)
+    # Убираем `код`
+    text = re.sub(r'`(.*?)`', r'\1', text)
+    return text
 
 # === НАСТРОЙКА ЛОГИРОВАНИЯ ===
 logging.basicConfig(
@@ -69,16 +85,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         answer = start_consilium(user_question)
+        clean_answer = clean_markdown(answer)  # ← очищаем от звёздочек
         # Разбиваем длинные сообщения
-        if len(answer) > 4000:
-            for i in range(0, len(answer), 4000):
-                await update.message.reply_text(answer[i:i+4000])
+        if len(clean_answer) > 4000:
+            for i in range(0, len(clean_answer), 4000):
+                await update.message.reply_text(clean_answer[i:i+4000])
         else:
-            await update.message.reply_text(answer)
+            await update.message.reply_text(clean_answer)
     except Exception as e:
         logger.exception("Ошибка при обработке вопроса")
         await update.message.reply_text("❌ Произошла ошибка. Попробуй позже.")
-
 # === ЗАПУСК БОТА ===
 def main():
     if not TOKEN:
