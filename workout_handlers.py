@@ -1,6 +1,5 @@
 import logging
 import re
-from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from database import add_user, get_exercises, add_workout
@@ -10,6 +9,7 @@ logger = logging.getLogger(__name__)
 EXERCISE, RESULT, VIDEO = range(3)
 
 def get_current_week():
+    from datetime import datetime
     return datetime.now().isocalendar()[1]
 
 async def workout_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -35,7 +35,6 @@ async def workout_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def exercise_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
     if query.data == "cancel":
         await query.edit_message_text("❌ Запись тренировки отменена.")
         context.user_data.clear()
@@ -63,7 +62,6 @@ async def exercise_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def result_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     metric = context.user_data.get('metric')
-
     if metric == 'reps':
         if not text.isdigit():
             await update.message.reply_text("❌ Пожалуйста, введи число (количество повторений).")
@@ -74,7 +72,6 @@ async def result_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Неправильный формат. Введи время как ММ:СС (например, 05:30).")
             return RESULT
         context.user_data['result_value'] = text
-
     await update.message.reply_text("📎 Теперь отправь ссылку на видео с выполнением (Google Drive, YouTube и т.п.)")
     return VIDEO
 
@@ -87,14 +84,11 @@ async def video_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     exercise_id = context.user_data['exercise_id']
     result_value = context.user_data['result_value']
-
     add_workout(user_id, exercise_id, result_value, video_link)
-
     await update.message.reply_text(
         "✅ Тренировка успешно записана! Спасибо за честность.\n"
-        "Можешь посмотреть результаты командой /mystats."
+        "Можешь посмотреть результаты командой /stats (скоро добавим)."
     )
-
     context.user_data.clear()
     return ConversationHandler.END
 
