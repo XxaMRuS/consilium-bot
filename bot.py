@@ -351,7 +351,7 @@ def main():
     app.add_handler(workout_conv)
 
     # --- Обработчики колбэков ---
-    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
 
     # --- Обработчики сообщений ---
