@@ -1,10 +1,12 @@
 import sqlite3
 import logging
-from datetime import datetime
+import json
+import os
 
 logger = logging.getLogger(__name__)
 
 DB_NAME = "workouts.db"
+EXERCISES_JSON = "exercises.json"  # файл с начальными упражнениями
 
 def init_db():
     """Создаёт таблицы и добавляет недостающие колонки."""
@@ -30,7 +32,7 @@ def init_db():
             description TEXT,
             metric TEXT NOT NULL,
             points INTEGER DEFAULT 0,
-            week INTEGER DEFAULT 0,  -- 0 = всегда активно, иначе номер недели
+            week INTEGER DEFAULT 0,
             is_active BOOLEAN DEFAULT 1
         )
     """)
@@ -106,6 +108,7 @@ def add_workout(user_id, exercise_id, result_value, video_link):
     conn.close()
 
 def add_exercise(name, description, metric, points=0, week=0):
+    """Добавляет упражнение, если его ещё нет."""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     try:
@@ -119,6 +122,25 @@ def add_exercise(name, description, metric, points=0, week=0):
         success = False
     conn.close()
     return success
+
+def delete_exercise(exercise_id):
+    """Удаляет упражнение по ID."""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM exercises WHERE id = ?", (exercise_id,))
+    deleted = cur.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+def get_all_exercises():
+    """Возвращает список всех упражнений (id, name, metric, points, week)."""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, metric, points, week FROM exercises ORDER BY name")
+    exercises = cur.fetchall()
+    conn.close()
+    return exercises
 
 def set_exercise_week(exercise_id, week):
     """Устанавливает неделю для упражнения (админ-функция)."""
@@ -181,3 +203,42 @@ def get_leaderboard(period=None, limit=10):
     results = cur.fetchall()
     conn.close()
     return results
+
+# === АВТОЗАГРУЗКА УПРАЖНЕНИЙ ИЗ JSON ===
+def load_initial_exercises():
+    """Загружает упражнения из exercises.json, если таблица пуста."""
+    if not os.path.exists(EXERCISES_JSON):
+        logger.info(f"Файл {EXERCISES_JSON} не найден, пропускаем автозагрузку.")
+        return
+
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM exercises")
+    count = cur.fetchone()[0]
+    if count > 0:
+        logger.info("Таблица упражнений не пуста, автозагрузка не требуется.")
+        conn.close()
+        return
+
+    try:
+        with open(EXERCISES_JSON, 'r', encoding='utf-8') as f:
+            exercises = json.load(f)
+    except Exception as e:
+        logger.error(f"Ошибка чтения {EXERCISES_JSON}: {e}")
+        conn.close()
+        return
+
+    for ex in exercises:
+        try:
+            cur.execute("""
+                INSERT INTO exercises (name, description, metric, points, week)
+                VALUES (?, ?, ?, ?, ?)
+            """, (ex['name'], ex['description'], ex['metric'], ex['points'], ex.get('week', 0)))
+        except sqlite3.IntegrityError:
+            logger.warning(f"Упражнение '{ex['name']}' уже существует, пропускаем.")
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении {ex['name']}: {e}")
+
+    conn.commit()
+    conn.close()
+    logger.info(f"Автозагрузка завершена: загружено упражнений из {EXERCISES_JSON}.")
