@@ -270,7 +270,9 @@ def main():
     app.add_handler(CommandHandler("config", config_command))
     app.add_handler(CommandHandler("addexercise", add_exercise_command))
 
-    app.add_handler(CallbackQueryHandler(button_handler))
+    # Обработчик для фото-кнопок (только для известных стилей)
+photo_callbacks = ['sketch', 'anime', 'sepia', 'hardrock', 'pixel', 'neon', 'oil', 'watercolor', 'cartoon']
+app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
