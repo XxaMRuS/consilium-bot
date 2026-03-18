@@ -2,7 +2,6 @@ import os
 import logging
 import asyncio
 import re
-import shlex
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
@@ -244,60 +243,32 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ========== АДМИН-КОМАНДЫ ДЛЯ УПРАЖНЕНИЙ ==========
 async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Добавляет упражнение с баллами и опциональной неделей (с поддержкой кавычек)."""
     if not is_admin(update):
         await update.message.reply_text("⛔ Нет прав.")
         return
-
-    # Получаем полный текст команды и удаляем саму команду
-    full_text = update.message.text
-    if ' ' not in full_text:
+    if len(context.args) < 4:
         await update.message.reply_text(
             "Использование: /addexercise <название> <reps|time> <описание> <баллы> [неделя]\n"
-            "Пример: /addexercise \"Берпочки 50 штук\" reps \"Берпочки любимые\" 10"
+            "Пример: /addexercise Приседания reps 'Приседания со штангой' 10 15"
         )
         return
-
-    # Разбираем аргументы с учётом кавычек
-    args_part = full_text.split(maxsplit=1)[1]  # всё после команды
+    name = context.args[0]
+    metric = context.args[1]
     try:
-        args = shlex.split(args_part)
-    except ValueError as e:
-        await update.message.reply_text(f"❌ Ошибка в кавычках: {e}")
-        return
-
-    if len(args) < 4:
-        await update.message.reply_text("❌ Нужно минимум 4 аргумента: название тип описание баллы")
-        return
-
-    # Первый аргумент — название упражнения
-    name = args[0]
-    # Второй аргумент — тип (reps/time)
-    metric = args[1]
-    if metric not in ('reps', 'time'):
-        await update.message.reply_text("❌ Тип упражнения должен быть 'reps' или 'time'.")
-        return
-
-    # Определяем, есть ли неделя (последний аргумент может быть числом)
-    try:
-        last = args[-1]
-        if last.isdigit():
-            # Если последний — число, это неделя
-            week = int(last)
-            points = int(args[-2])
-            description = " ".join(args[2:-2])  # описание — всё между типом и баллами
-        else:
-            # Неделя не указана
-            week = 0
-            points = int(last)
-            description = " ".join(args[2:-1])
+        points = int(context.args[-2])
     except ValueError:
         await update.message.reply_text("❌ Баллы должны быть числом.")
         return
-
+    week = 0
+    if len(context.args) > 4:
+        try:
+            week = int(context.args[-1])
+        except ValueError:
+            await update.message.reply_text("❌ Неделя должна быть числом.")
+            return
+    description = " ".join(context.args[2:-2]) if len(context.args) > 4 else " ".join(context.args[2:-1])
     if add_exercise(name, description, metric, points, week):
-        week_text = f", неделя: {week}" if week != 0 else ""
-        await update.message.reply_text(f"✅ Упражнение '{name}' добавлено (баллы: {points}{week_text}).")
+        await update.message.reply_text(f"✅ Упражнение '{name}' добавлено (баллы: {points}, неделя: {week}).")
     else:
         await update.message.reply_text(f"❌ Упражнение с таким именем уже существует.")
 
@@ -380,7 +351,7 @@ def main():
     app.add_handler(workout_conv)
 
     # --- Обработчики колбэков ---
-    app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
+    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
 
     # --- Обработчики сообщений ---
