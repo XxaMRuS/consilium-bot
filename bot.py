@@ -5,6 +5,12 @@ import re
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
+# === ИМПОРТЫ ДЛЯ БАЗЫ ДАННЫХ И РАБОТЫ С УПРАЖНЕНИЯМИ ===
+from database import init_db, add_user, get_exercises, add_workout
+from telegram.ext import ConversationHandler
+import re
+# Состояния для ConversationHandler (запись тренировки)
+EXERCISE, RESULT, VIDEO = range(3)
 
 # === ИНИЦИАЛИЗАЦИЯ ASYNCIO ===
 def get_or_create_eventloop():
@@ -58,6 +64,9 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"OK")
     def log_message(self, format, *args):
         pass
+        # Инициализируем базу данных
+init_db()
+logger.info("База данных готова к работе.")
 
 def run_http_server():
     port = int(os.environ.get("PORT", 10000))
