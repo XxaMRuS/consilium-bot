@@ -8,7 +8,10 @@ from collections import deque
 
 # === ИМПОРТЫ ДЛЯ ТЕЛЕГРАМА И КНОПОК ===
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
+    filters, ContextTypes, ConversationHandler
+)
 
 # === ТВОИ ЛОКАЛЬНЫЕ МОДУЛИ ===
 from ai_work import start_consilium, stats as consilium_stats, history, ENABLED_PROVIDERS
@@ -19,7 +22,7 @@ from photo_processor import (
 )
 
 # === НОВЫЕ ИМПОРТЫ ДЛЯ БАЗЫ ДАННЫХ И ТРЕНИРОВОК ===
-from database import init_db, add_user, get_exercises, add_workout
+from database import init_db, add_user, get_exercises, add_workout, add_exercise
 from workout_handlers import (
     workout_start, exercise_choice, result_input, video_input,
     workout_cancel, EXERCISE, RESULT, VIDEO
@@ -38,7 +41,7 @@ ADMIN_ID = int(os.getenv("ADMIN_USER_ID", 0))  # твой ID
 
 # === ИНИЦИАЛИЗАЦИЯ ASYNCIO ===
 try:
-    loop = asyncio.get_event_loop()
+    asyncio.get_event_loop()
 except RuntimeError:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -81,10 +84,10 @@ logger.info("База данных готова к работе.")
 # ========== ОСНОВНЫЕ ОБРАБОТЧИКИ КОМАНД (СТАРЫЕ) ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🚀 Привет! Я твой AI-консилиум и графический редактор.\n\n"
+        "🚀 Привет! Я твой AI-консилиум и фитнес-трекер.\n\n"
         "Команды:\n"
         "/menu — выбрать стиль для фото\n"
-        "/stats — статистика работы\n"
+        "/stats — статистика AI\n"
         "/reset — сбросить историю диалога\n"
         "/help — помощь\n"
         "/wod — записать тренировку"
@@ -106,7 +109,7 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🎨 Выбери стиль для фото:", reply_markup=reply_markup)
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = "📊 **Статистика работы:**\n"
+    text = "📊 **Статистика работы AI:**\n"
     text += f"Всего попыток: {consilium_stats['attempts']}\n"
     text += f"Успешно: {consilium_stats['success']}\n"
     text += f"Ошибок: {consilium_stats['failures']}\n"
@@ -231,7 +234,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ========== АДМИН-КОМАНДА ДЛЯ ДОБАВЛЕНИЯ УПРАЖНЕНИЙ ==========
 async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда для добавления упражнения (только для админа)."""
     if not is_admin(update):
         await update.message.reply_text("⛔ Нет прав.")
         return
@@ -241,7 +243,6 @@ async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYP
     name = context.args[0]
     metric = context.args[1]
     description = " ".join(context.args[2:]) if len(context.args) > 2 else ""
-    from database import add_exercise
     if add_exercise(name, description, metric):
         await update.message.reply_text(f"✅ Упражнение '{name}' добавлено.")
     else:
@@ -252,36 +253,43 @@ def main():
     if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
 
-    # Создаём цикл событий asyncio
-    try:
-        asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    app = Application.builder().token(TOKEN).build()
 
-    app = Application.builder().token(TOKEN).build()   # ← 4 пробела
+    # --- Регистрация обычных команд ---
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("menu", show_menu))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("reset", reset_command))
+    app.add_handler(CommandHandler("config", config_command))
+    app.add_handler(CommandHandler("addexercise", add_exercise_command))
 
-    # --- Сначала регистрируем команды ---
-    app.add_handler(CommandHandler("start", start))    # ← 4 пробела
-    # ... все остальные строки тоже с 4 пробелами
-
-    # --- ДИАЛОГ ТРЕНИРОВОК ---
-    workout_conv = ConversationHandler(                # ← 4 пробела
+    # --- ДИАЛОГ ТРЕНИРОВОК (должен быть до общих CallbackQueryHandler) ---
+    workout_conv = ConversationHandler(
         entry_points=[CommandHandler('wod', workout_start)],
-        # ... остальные строки диалога сдвинуты внутри скобок
+        states={
+            EXERCISE: [CallbackQueryHandler(exercise_choice, pattern='^ex_')],
+            RESULT: [MessageHandler(filters.TEXT & ~filters.COMMAND, result_input)],
+            VIDEO: [MessageHandler(filters.TEXT & ~filters.COMMAND, video_input)],
+        },
+        fallbacks=[CommandHandler('cancel', workout_cancel)],
     )
-    app.add_handler(workout_conv)                      # ← 4 пробела
+    app.add_handler(workout_conv)
 
-    # --- А теперь общие обработчики колбэков ---
-    app.add_handler(CallbackQueryHandler(button_handler))          # ← 4 пробела
-    app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))  # ← 4 пробела
+    # --- Обработчики колбэков (общие) ---
+    app.add_handler(CallbackQueryHandler(button_handler))  # для стилей фото
+    app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))  # для конфига
 
-    # --- И только потом обработчики сообщений ---
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))   # ← 4 пробела
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)) # ← 4 пробела
+    # --- Обработчики сообщений ---
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    logger.info("🚀 Бот запущен...")                    # ← 4 пробела
-    app.run_polling()      
+    logger.info("🚀 Бот запущен...")
+    app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        logger.exception("Критическая ошибка в main: %s", e)
+        raise
