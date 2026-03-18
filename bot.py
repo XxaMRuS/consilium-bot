@@ -14,14 +14,14 @@ from telegram.ext import (
 )
 
 # === ТВОИ ЛОКАЛЬНЫЕ МОДУЛИ ===
-from ai_work import start_consilium, stats as consilium_stats, history, ENABLED_PROVIDERS
+from ai_work import start_consilium, stats as consilium_stats, ENABLED_PROVIDERS  # history убран
 from photo_processor import (
     convert_to_sketch, convert_to_anime, convert_to_sepia, 
     convert_to_hard_rock, convert_to_pixel, convert_to_neon, 
     convert_to_oil, convert_to_watercolor, convert_to_cartoon
 )
 
-# === НОВЫЕ ИМПОРТЫ ДЛЯ БАЗЫ ДАННЫХ И ТРЕНИРОВОК ===
+# === ИМПОРТЫ ДЛЯ БАЗЫ ДАННЫХ И ТРЕНИРОВОК ===
 from database import init_db, add_user, get_exercises, add_workout, add_exercise
 from workout_handlers import (
     workout_start, exercise_choice, result_input, video_input,
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 # === ТОКЕН БОТА (БЕРЁТСЯ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ) ===
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_USER_ID", 0))  # твой ID
+ADMIN_ID = int(os.getenv("ADMIN_USER_ID", 0))
 
 # === ИНИЦИАЛИЗАЦИЯ ASYNCIO ===
 try:
@@ -48,7 +48,6 @@ except RuntimeError:
 
 # === УТИЛИТЫ ===
 def clean_markdown(text):
-    """Удаляет из текста MarkDown-символы."""
     text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
     text = re.sub(r'\*(.*?)\*', r'\1', text)
     text = re.sub(r'__(.*?)__', r'\1', text)
@@ -56,7 +55,6 @@ def clean_markdown(text):
     return text
 
 def is_admin(update: Update) -> bool:
-    """Проверяет, является ли пользователь администратором."""
     return update.effective_user.id == ADMIN_ID
 
 # === ПРОСТОЙ HTTP-СЕРВЕР ДЛЯ RENDER ===
@@ -74,14 +72,13 @@ def run_http_server():
     logger.info(f"HTTP-сервер запущен на порту {port}")
     server.serve_forever()
 
-# Запускаем сервер в отдельном потоке
 Thread(target=run_http_server, daemon=True).start()
 
 # === ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ===
 init_db()
 logger.info("База данных готова к работе.")
 
-# ========== ОСНОВНЫЕ ОБРАБОТЧИКИ КОМАНД (СТАРЫЕ) ==========
+# ========== ОСНОВНЫЕ ОБРАБОТЧИКИ КОМАНД ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🚀 Привет! Я твой AI-консилиум и фитнес-трекер.\n\n"
@@ -118,8 +115,10 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode='Markdown')
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    history.clear()
-    await update.message.reply_text("🔄 История диалога очищена.")
+    # Очищаем только историю текущего пользователя
+    if 'user_history' in context.user_data:
+        context.user_data['user_history'].clear()
+    await update.message.reply_text("🔄 Твоя личная история диалога очищена.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
@@ -127,7 +126,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔹 `/start` - Запуск\n"
         "🔹 `/menu` - Выбор эффекта для фото\n"
         "🔹 `/stats` - Статистика AI\n"
-        "🔹 `/reset` - Очистить память ИИ\n"
+        "🔹 `/reset` - Очистить свою историю диалога\n"
         "🔹 `/help` - Помощь\n"
         "🔹 `/config` - Настройки AI (только админ)\n"
         "🔹 `/wod` - Записать тренировку\n\n"
@@ -175,12 +174,16 @@ async def config_callback_handler(update: Update, context: ContextTypes.DEFAULT_
                 parse_mode='Markdown'
             )
 
-# ========== ОБРАБОТКА ТЕКСТА И ФОТО (СТАРЫЕ) ==========
+# ========== ОБРАБОТКА ТЕКСТА И ФОТО ==========
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_question = update.message.text
     await update.message.chat.send_action(action="typing")
     try:
-        answer = start_consilium(user_question)
+        # Получаем историю пользователя (создаём, если нет)
+        if 'user_history' not in context.user_data:
+            context.user_data['user_history'] = deque(maxlen=5)  # используем deque как в ai_work
+        
+        answer = start_consilium(user_question, context.user_data['user_history'])
         clean_answer = clean_markdown(answer)
         if len(clean_answer) > 4000:
             for i in range(0, len(clean_answer), 4000):
@@ -255,7 +258,7 @@ def main():
 
     app = Application.builder().token(TOKEN).build()
 
-    # --- Регистрация обычных команд ---
+    # --- Обычные команды ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", show_menu))
     app.add_handler(CommandHandler("help", help_command))
@@ -264,7 +267,7 @@ def main():
     app.add_handler(CommandHandler("config", config_command))
     app.add_handler(CommandHandler("addexercise", add_exercise_command))
 
-    # --- ДИАЛОГ ТРЕНИРОВОК (должен быть до общих CallbackQueryHandler) ---
+    # --- ДИАЛОГ ТРЕНИРОВОК ---
     workout_conv = ConversationHandler(
         entry_points=[CommandHandler('wod', workout_start)],
         states={
@@ -276,9 +279,9 @@ def main():
     )
     app.add_handler(workout_conv)
 
-    # --- Обработчики колбэков (общие) ---
-    app.add_handler(CallbackQueryHandler(button_handler))  # для стилей фото
-    app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))  # для конфига
+    # --- Обработчики колбэков ---
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
 
     # --- Обработчики сообщений ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
