@@ -17,7 +17,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 # Твои локальные модули
-from ai_work import start_consilium, stats as consilium_stats, history
+from ai_work import start_consilium, stats as consilium_stats, history, ENABLED_PROVIDERS
 from photo_processor import (
     convert_to_sketch, convert_to_anime, convert_to_sepia, 
     convert_to_hard_rock, convert_to_pixel, convert_to_neon, 
