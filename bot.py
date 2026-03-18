@@ -28,7 +28,8 @@ from photo_processor import (
 from database import (
     init_db, add_user, get_exercises, add_workout, add_exercise,
     set_exercise_week, get_user_stats, get_leaderboard,
-    get_all_exercises, delete_exercise
+    get_all_exercises, delete_exercise,
+    get_user_level, set_user_level
 )
 from workout_handlers import (
     workout_start, exercise_choice, result_input, video_input,
@@ -86,24 +87,30 @@ init_db()
 logger.info("База данных готова к работе.")
 
 # ========== ОСНОВНЫЕ ОБРАБОТЧИКИ КОМАНД ==========
-await update.message.reply_text(
-    "🔥 Привет! Я твой персональный фитнес-помощник и AI-консилиум в одном боте.\n"
-    "Мне можно задавать любые вопросы, и мы с другими AI совещаемся, "
-    "чтобы дать тебе самый лучший ответ. Поэтому иногда я могу думать чуть дольше! 😉\n\n"
-    "📸 **Фотоэффекты:**\n"
-    "/menu — выбери стиль и отправь фото\n\n"
-    "💪 **Тренировки:**\n"
-    "/wod — записать выполненную тренировку\n"
-    "/mystats — моя статистика (баллы, тренировки)\n"
-    "/top — таблица лидеров\n\n"
-    "🤖 **Общение с AI:**\n"
-    "Просто напиши любой вопрос — отвечу как консилиум.\n"
-    "/reset — очистить историю диалога\n\n"
-    "⚙️ **Для админа:**\n"
-    "/config — настройка AI\n"
-    "/listexercises — список упражнений\n\n"
-    "Погнали! 👊"
-)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # При первом запуске можно добавить проверку уровня, но пользователь добавится при первой тренировке
+    await update.message.reply_text(
+        "🔥 Привет! Я твой персональный фитнес-помощник и AI-консилиум в одном боте.\n"
+        "Мне можно задавать любые вопросы, и мы с другими AI совещаемся, "
+        "чтобы дать тебе самый лучший ответ. Поэтому иногда я могу думать чуть дольше! 😉\n\n"
+        "📸 **Фотоэффекты:**\n"
+        "/menu — выбери стиль и отправь фото\n\n"
+        "💪 **Тренировки:**\n"
+        "/wod — записать выполненную тренировку\n"
+        "/mystats — моя статистика (баллы, тренировки)\n"
+        "/top — таблица лидеров\n"
+        "/setlevel — сменить уровень (новичок/профи)\n\n"
+        "🤖 **Общение с AI:**\n"
+        "Просто напиши любой вопрос — отвечу как консилиум.\n"
+        "/reset — очистить историю диалога\n\n"
+        "⚙️ **Для админа:**\n"
+        "/config — настройка AI\n"
+        "/listexercises — список упражнений\n"
+        "/addexercise — добавить упражнение\n"
+        "/delexercise — удалить упражнение\n"
+        "/load_exercises — загрузить из JSON\n\n"
+        "Погнали! 👊"
+    )
 
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -144,10 +151,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔹 `/help` - Помощь\n"
         "🔹 `/config` - Настройки AI (только админ)\n"
         "🔹 `/wod` - Записать тренировку\n"
-        "🔹 `/mystats [day|week|month]` - Моя статистика\n"
-        "🔹 `/top [day|week|month]` - Таблица лидеров\n"
+        "🔹 `/mystats [day|week|month|year]` - Моя статистика\n"
+        "🔹 `/top [day|week|month|year] [beginner|pro]` - Таблица лидеров\n"
+        "🔹 `/setlevel <beginner|pro>` - Сменить уровень\n"
         "🔹 `/listexercises` - Список упражнений (админ)\n"
         "🔹 `/delexercise <id>` - Удалить упражнение (админ)\n"
+        "🔹 `/addexercise` - Добавить упражнение (админ)\n"
         "🔹 `/load_exercises` - Загрузить из JSON (админ)\n\n"
         "Просто отправь текст, чтобы спросить ИИ, или фото (после выбора стиля в /menu)."
     )
@@ -254,7 +263,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ========== АДМИН-КОМАНДЫ ДЛЯ УПРАЖНЕНИЙ ==========
 async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Добавляет упражнение с поддержкой кавычек (исправленная версия)."""
+    """Добавляет упражнение с поддержкой кавычек и уровня сложности."""
     if not is_admin(update):
         await update.message.reply_text("⛔ Нет прав.")
         return
@@ -262,8 +271,9 @@ async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYP
     full_text = update.message.text
     if ' ' not in full_text:
         await update.message.reply_text(
-            "Использование: /addexercise <название> <reps|time> <описание> <баллы> [неделя]\n"
-            "Пример: /addexercise \"Берпочки 50 штук\" reps \"Берпочки любимые\" 10"
+            "Использование: /addexercise <название> <reps|time> <описание> <баллы> [неделя] [difficulty]\n"
+            "difficulty: beginner или pro (по умолчанию beginner)\n"
+            "Пример: /addexercise \"Берпочки 50 штук\" reps \"Берпочки любимые\" 10 15 pro"
         )
         return
 
@@ -284,25 +294,49 @@ async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("❌ Тип упражнения должен быть 'reps' или 'time'.")
         return
 
+    # Определяем баллы, неделю и уровень сложности
     try:
-        if len(args) == 5:
-            week = int(args[-1])
-            points = int(args[-2])
-            description = " ".join(args[2:-2])
-        elif len(args) == 4:
+        if len(args) == 4:
+            # только баллы
+            points = int(args[3])
             week = 0
-            points = int(args[-1])
-            description = " ".join(args[2:-1])
+            difficulty = 'beginner'
+            description = " ".join(args[2:3])
+        elif len(args) == 5:
+            # либо баллы + неделя, либо баллы + difficulty
+            if args[4].isdigit():
+                week = int(args[4])
+                points = int(args[3])
+                difficulty = 'beginner'
+                description = " ".join(args[2:3])
+            else:
+                # difficulty
+                if args[4] not in ('beginner', 'pro'):
+                    await update.message.reply_text("❌ Уровень сложности должен быть 'beginner' или 'pro'.")
+                    return
+                week = 0
+                points = int(args[3])
+                difficulty = args[4]
+                description = " ".join(args[2:3])
+        elif len(args) == 6:
+            # баллы + неделя + difficulty
+            points = int(args[3])
+            week = int(args[4])
+            difficulty = args[5]
+            if difficulty not in ('beginner', 'pro'):
+                await update.message.reply_text("❌ Уровень сложности должен быть 'beginner' или 'pro'.")
+                return
+            description = " ".join(args[2:3])
         else:
             await update.message.reply_text("❌ Неправильное количество аргументов.")
             return
     except ValueError:
-        await update.message.reply_text("❌ Баллы должны быть числом.")
+        await update.message.reply_text("❌ Баллы и неделя должны быть числами.")
         return
 
-    if add_exercise(name, description, metric, points, week):
+    if add_exercise(name, description, metric, points, week, difficulty):
         week_text = f", неделя: {week}" if week != 0 else ""
-        await update.message.reply_text(f"✅ Упражнение '{name}' добавлено (баллы: {points}{week_text}).")
+        await update.message.reply_text(f"✅ Упражнение '{name}' добавлено (баллы: {points}{week_text}, уровень: {difficulty}).")
     else:
         await update.message.reply_text(f"❌ Упражнение с таким именем уже существует.")
 
@@ -333,9 +367,9 @@ async def list_exercises_command(update: Update, context: ContextTypes.DEFAULT_T
         return
     text = "📋 **Список упражнений:**\n\n"
     for ex in exercises:
-        ex_id, name, metric, points, week = ex
+        ex_id, name, metric, points, week, difficulty = ex
         week_text = f" (неделя {week})" if week != 0 else ""
-        text += f"🔹 ID: {ex_id} — {name} — {points} баллов{week_text}\n"
+        text += f"🔹 ID: {ex_id} — {name} — {points} баллов, уровень: {difficulty}{week_text}\n"
     await update.message.reply_text(text, parse_mode='Markdown')
 
 async def load_exercises_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -354,38 +388,78 @@ async def load_exercises_command(update: Update, context: ContextTypes.DEFAULT_T
     added = 0
     skipped = 0
     for ex in exercises:
-        if add_exercise(ex['name'], ex['description'], ex['metric'], ex.get('points', 0), ex.get('week', 0)):
+        name = ex.get('name')
+        metric = ex.get('metric')
+        description = ex.get('description', '')
+        points = ex.get('points', 0)
+        week = ex.get('week', 0)
+        difficulty = ex.get('difficulty', 'beginner')
+        if add_exercise(name, description, metric, points, week, difficulty):
             added += 1
         else:
             skipped += 1
     await update.message.reply_text(f"✅ Загружено: {added} упражнений, пропущено (уже есть): {skipped}.")
 
+# ========== КОМАНДЫ ДЛЯ РАБОТЫ С УРОВНЕМ ПОЛЬЗОВАТЕЛЯ ==========
+async def setlevel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Изменяет уровень пользователя (beginner / pro)."""
+    user_id = update.effective_user.id
+    if len(context.args) != 1 or context.args[0] not in ('beginner', 'pro'):
+        await update.message.reply_text(
+            "❌ Использование: /setlevel beginner  или  /setlevel pro\n"
+            "Предупреждение: при смене уровня твой счёт в новой лиге начнётся с нуля, "
+            "но общий счёт сохранится."
+        )
+        return
+
+    new_level = context.args[0]
+    if set_user_level(user_id, new_level):
+        await update.message.reply_text(f"✅ Твой уровень изменён на «{new_level}». Теперь твои тренировки будут учитываться в этой лиге.")
+    else:
+        await update.message.reply_text("❌ Ошибка при смене уровня.")
+
 # ========== СТАТИСТИКА ==========
 async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     period = context.args[0] if context.args else None
-    if period and period not in ('day', 'week', 'month'):
-        await update.message.reply_text("❌ Неверный период. Используй: day, week, month")
+    if period and period not in ('day', 'week', 'month', 'year'):
+        await update.message.reply_text("❌ Неверный период. Используй: day, week, month, year")
         return
-    total_points, total_workouts = get_user_stats(user_id, period)
+
+    # Получаем общую статистику и статистику по текущей лиге
+    total_points, total_workouts = get_user_stats(user_id, period, level=None)
+    level_points, level_workouts = get_user_stats(user_id, period, level=get_user_level(user_id))
+
     period_text = f" за {period}" if period else " за всё время"
     text = f"📊 **Твоя статистика{period_text}:**\n"
-    text += f"🏋️ Тренировок: {total_workouts or 0}\n"
-    text += f"⭐ Баллов: {total_points or 0}"
+    text += f"🏋️ Всего тренировок: {total_workouts or 0}\n"
+    text += f"⭐ Всего баллов: {total_points or 0}\n\n"
+    text += f"**В текущей лиге:**\n"
+    text += f"🏋️ Тренировок: {level_workouts or 0}\n"
+    text += f"⭐ Баллов: {level_points or 0}"
     await update.message.reply_text(text, parse_mode='Markdown')
 
 async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    period = context.args[0] if context.args else None
-    if period and period not in ('day', 'week', 'month'):
-        await update.message.reply_text("❌ Неверный период. Используй: day, week, month")
-        return
+    # Можно указать период и/или лигу: /top pro year, /top beginner week
+    args = context.args
+    period = None
+    level = get_user_level(update.effective_user.id)  # по умолчанию текущий уровень пользователя
+
+    for arg in args:
+        if arg in ('day', 'week', 'month', 'year'):
+            period = arg
+        elif arg in ('beginner', 'pro'):
+            level = arg
+
     limit = 10
-    leaderboard = get_leaderboard(period, limit)
+    leaderboard = get_leaderboard(period, level, limit)
     if not leaderboard:
         await update.message.reply_text("Пока нет данных для таблицы лидеров.")
         return
+
     period_text = f" за {period}" if period else " за всё время"
-    text = f"🏆 **Топ-{limit}{period_text}:**\n"
+    level_text = "Новички" if level == 'beginner' else "Профи"
+    text = f"🏆 **Топ-{limit} {level_text}{period_text}:**\n"
     for i, (uid, first_name, username, total) in enumerate(leaderboard, 1):
         name = first_name or username or f"User{uid}"
         text += f"{i}. {name} — {total} баллов\n"
@@ -411,6 +485,7 @@ def main():
     app.add_handler(CommandHandler("load_exercises", load_exercises_command))
     app.add_handler(CommandHandler("mystats", mystats_command))
     app.add_handler(CommandHandler("top", top_command))
+    app.add_handler(CommandHandler("setlevel", setlevel_command))
 
     # --- ДИАЛОГ ТРЕНИРОВОК ---
     workout_conv = ConversationHandler(
