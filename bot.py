@@ -248,6 +248,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Добавляет упражнение с поддержкой кавычек в названии и описании."""
     if not is_admin(update):
+        logger.info(f"DEBUG add_exercise_command: полный текст = {update.message.text}")
         await update.message.reply_text("⛔ Нет прав.")
         return
 
