@@ -1,16 +1,13 @@
 import sqlite3
 import logging
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 DB_NAME = "workouts.db"
 
 def init_db():
-    """Создаёт таблицы, если их ещё нет."""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
-
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -20,7 +17,6 @@ def init_db():
             registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-
     cur.execute("""
         CREATE TABLE IF NOT EXISTS exercises (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,7 +26,6 @@ def init_db():
             is_active BOOLEAN DEFAULT 1
         )
     """)
-
     cur.execute("""
         CREATE TABLE IF NOT EXISTS workouts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,7 +38,6 @@ def init_db():
             FOREIGN KEY(exercise_id) REFERENCES exercises(id)
         )
     """)
-
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована.")
