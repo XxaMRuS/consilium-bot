@@ -6,9 +6,11 @@ from database import add_user, get_exercises, add_workout
 
 logger = logging.getLogger(__name__)
 
+# Состояния диалога
 EXERCISE, RESULT, VIDEO = range(3)
 
 async def workout_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Начало диалога: показывает список доступных упражнений."""
     user = update.effective_user
     add_user(user.id, user.first_name, user.last_name, user.username)
 
@@ -17,20 +19,30 @@ async def workout_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Сейчас нет активных упражнений. Попробуй позже.")
         return ConversationHandler.END
 
+    # Создаём клавиатуру с упражнениями и кнопкой отмены
     keyboard = []
     for ex_id, name, metric in exercises:
         keyboard.append([InlineKeyboardButton(name, callback_data=f"ex_{ex_id}")])
+    keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("🏋️ Выбери упражнение, которое выполнил:", reply_markup=reply_markup)
     return EXERCISE
 
 async def exercise_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обрабатывает выбор упражнения."""
     query = update.callback_query
     await query.answer()
+
+    if query.data == "cancel":
+        await query.edit_message_text("❌ Запись тренировки отменена.")
+        context.user_data.clear()
+        return ConversationHandler.END
+
     ex_id = int(query.data.split("_")[1])
     context.user_data['exercise_id'] = ex_id
 
+    # Получаем метрику упражнения
     exercises = get_exercises(active_only=True)
     ex_metric = None
     for ex in exercises:
@@ -48,6 +60,7 @@ async def exercise_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return RESULT
 
 async def result_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Получает результат (повторения или время)."""
     text = update.message.text.strip()
     metric = context.user_data.get('metric')
 
@@ -66,6 +79,7 @@ async def result_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return VIDEO
 
 async def video_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Получает ссылку на видео и сохраняет результат."""
     video_link = update.message.text.strip()
     if not video_link.startswith(('http://', 'https://')):
         await update.message.reply_text("❌ Это не похоже на ссылку. Попробуй ещё раз (должно начинаться с http:// или https://)")
@@ -86,6 +100,7 @@ async def video_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def workout_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Отмена диалога (по команде /cancel)."""
     await update.message.reply_text("❌ Запись тренировки отменена.")
     context.user_data.clear()
     return ConversationHandler.END
