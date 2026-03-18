@@ -2,28 +2,24 @@ import os
 import logging
 import asyncio
 import re
-import aiohttp  # для погоды, если добавим позже
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
 
-# Импорты из Telegram
+# === ИМПОРТЫ ДЛЯ ТЕЛЕГРАМА И КНОПОК ===
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
-    filters, ContextTypes, ConversationHandler
-)
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 
-# Наши локальные модули
+# === ТВОИ ЛОКАЛЬНЫЕ МОДУЛИ ===
 from ai_work import start_consilium, stats as consilium_stats, history, ENABLED_PROVIDERS
 from photo_processor import (
-    convert_to_sketch, convert_to_anime, convert_to_sepia,
-    convert_to_hard_rock, convert_to_pixel, convert_to_neon,
+    convert_to_sketch, convert_to_anime, convert_to_sepia, 
+    convert_to_hard_rock, convert_to_pixel, convert_to_neon, 
     convert_to_oil, convert_to_watercolor, convert_to_cartoon
 )
 
-# Модули для базы данных и тренировок
-from database import init_db, add_user, get_exercises, add_workout, add_exercise
+# === НОВЫЕ ИМПОРТЫ ДЛЯ БАЗЫ ДАННЫХ И ТРЕНИРОВОК ===
+from database import init_db, add_user, get_exercises, add_workout
 from workout_handlers import (
     workout_start, exercise_choice, result_input, video_input,
     workout_cancel, EXERCISE, RESULT, VIDEO
@@ -36,9 +32,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# === ТОКЕН БОТА ===
+# === ТОКЕН БОТА (БЕРЁТСЯ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ) ===
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_USER_ID", 0))
+ADMIN_ID = int(os.getenv("ADMIN_USER_ID", 0))  # твой ID
 
 # === ИНИЦИАЛИЗАЦИЯ ASYNCIO ===
 try:
@@ -66,7 +62,6 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")
-
     def log_message(self, format, *args):
         pass
 
@@ -79,20 +74,23 @@ def run_http_server():
 # Запускаем сервер в отдельном потоке
 Thread(target=run_http_server, daemon=True).start()
 
-# === ОБРАБОТЧИКИ КОМАНД ===
+# === ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ===
+init_db()
+logger.info("База данных готова к работе.")
+
+# ========== ОСНОВНЫЕ ОБРАБОТЧИКИ КОМАНД (СТАРЫЕ) ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🚀 Привет! Я твой AI-консилиум и графический редактор.\n\n"
         "Команды:\n"
         "/menu — выбрать стиль для фото\n"
-        "/wod — записать тренировку\n"
-        "/stats — статистика работы AI\n"
+        "/stats — статистика работы\n"
         "/reset — сбросить историю диалога\n"
-        "/help — помощь"
+        "/help — помощь\n"
+        "/wod — записать тренировку"
     )
 
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Отправляет сообщение с кнопками для выбора стиля."""
     keyboard = [
         [InlineKeyboardButton("✏️ Карандаш", callback_data='sketch'),
          InlineKeyboardButton("🎌 Аниме", callback_data='anime')],
@@ -108,7 +106,7 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🎨 Выбери стиль для фото:", reply_markup=reply_markup)
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = "📊 **Статистика работы AI:**\n"
+    text = "📊 **Статистика работы:**\n"
     text += f"Всего попыток: {consilium_stats['attempts']}\n"
     text += f"Успешно: {consilium_stats['success']}\n"
     text += f"Ошибок: {consilium_stats['failures']}\n"
@@ -118,32 +116,31 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     history.clear()
-    await update.message.reply_text("🔄 История диалога AI очищена.")
+    await update.message.reply_text("🔄 История диалога очищена.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "🤖 **Доступные команды:**\n\n"
         "🔹 `/start` - Запуск\n"
         "🔹 `/menu` - Выбор эффекта для фото\n"
-        "🔹 `/wod` - Записать тренировку\n"
         "🔹 `/stats` - Статистика AI\n"
-        "🔹 `/reset` - Очистить память AI\n"
-        "🔹 `/help` - Помощь\n\n"
-        "Просто отправь текст, чтобы спросить AI, или фото (после выбора стиля в /menu)."
+        "🔹 `/reset` - Очистить память ИИ\n"
+        "🔹 `/help` - Помощь\n"
+        "🔹 `/config` - Настройки AI (только админ)\n"
+        "🔹 `/wod` - Записать тренировку\n\n"
+        "Просто отправь текст, чтобы спросить ИИ, или фото (после выбора стиля в /menu)."
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
+# ========== КОНФИГУРАЦИЯ КОНСИЛИУМА (ТОЛЬКО ДЛЯ АДМИНА) ==========
 async def config_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает кнопки для включения/отключения провайдеров (только для админа)."""
     if not is_admin(update):
         await update.message.reply_text("⛔ У вас нет прав на эту команду.")
         return
-
     keyboard = []
     for provider, enabled in ENABLED_PROVIDERS.items():
         status = "✅ ВКЛ" if enabled else "❌ ВЫКЛ"
         keyboard.append([InlineKeyboardButton(f"{provider} {status}", callback_data=f"toggle_{provider}")])
-
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         "⚙️ **Настройки консилиума**\n"
@@ -153,26 +150,21 @@ async def config_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def config_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обрабатывает нажатия на кнопки конфигурации."""
     query = update.callback_query
     await query.answer()
-
     if query.from_user.id != ADMIN_ID:
         await query.edit_message_text("⛔ Недоступно.")
         return
-
     callback_data = query.data
     if callback_data.startswith("toggle_"):
         provider = callback_data.replace("toggle_", "")
         if provider in ENABLED_PROVIDERS:
             ENABLED_PROVIDERS[provider] = not ENABLED_PROVIDERS[provider]
-
             keyboard = []
             for p, enabled in ENABLED_PROVIDERS.items():
                 status = "✅ ВКЛ" if enabled else "❌ ВЫКЛ"
                 keyboard.append([InlineKeyboardButton(f"{p} {status}", callback_data=f"toggle_{p}")])
             reply_markup = InlineKeyboardMarkup(keyboard)
-
             await query.edit_message_text(
                 "⚙️ **Настройки консилиума**\n"
                 "Нажми на кнопку, чтобы включить/выключить участника:",
@@ -180,23 +172,7 @@ async def config_callback_handler(update: Update, context: ContextTypes.DEFAULT_
                 parse_mode='Markdown'
             )
 
-# === АДМИН-КОМАНДА ДЛЯ ДОБАВЛЕНИЯ УПРАЖНЕНИЙ ===
-async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда для добавления упражнения (только для админа)."""
-    if not is_admin(update):
-        return
-    if not context.args or len(context.args) < 2:
-        await update.message.reply_text("Использование: /addexercise <название> <reps|time> <описание>")
-        return
-    name = context.args[0]
-    metric = context.args[1]
-    description = " ".join(context.args[2:]) if len(context.args) > 2 else ""
-    if add_exercise(name, description, metric):
-        await update.message.reply_text(f"✅ Упражнение '{name}' добавлено.")
-    else:
-        await update.message.reply_text(f"❌ Упражнение с таким именем уже существует.")
-
-# === ОБРАБОТКА ТЕКСТА И ФОТО ===
+# ========== ОБРАБОТКА ТЕКСТА И ФОТО (СТАРЫЕ) ==========
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_question = update.message.text
     await update.message.chat.send_action(action="typing")
@@ -210,13 +186,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(clean_answer)
     except Exception as e:
         logger.exception("Ошибка в handle_message")
-        await update.message.reply_text("❌ Ошибка при ответе AI.")
+        await update.message.reply_text("❌ Ошибка при ответе ИИ.")
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     context.user_data['effect'] = query.data
-
     styles = {
         'sketch': 'карандаш', 'anime': 'аниме', 'sepia': 'сепия',
         'hardrock': 'хард-рок', 'pixel': 'пиксель', 'neon': 'неон',
@@ -229,14 +204,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'effect' not in context.user_data:
         await update.message.reply_text("Сначала выбери стиль через /menu")
         return
-
     effect = context.user_data['effect']
     photo_file = await update.message.photo[-1].get_file()
     photo_bytes = await photo_file.download_as_bytearray()
-
     try:
         await update.message.reply_text("⏳ Обрабатываю фото...")
-
         processors = {
             'sketch': convert_to_sketch,
             'anime': convert_to_anime,
@@ -248,25 +220,37 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'watercolor': convert_to_watercolor,
             'cartoon': convert_to_cartoon
         }
-
         if effect in processors:
             output = processors[effect](photo_bytes)
             await update.message.reply_photo(photo=output, caption=f"Готово! Стиль: {effect}")
         else:
             await update.message.reply_text("Неизвестный эффект.")
-
     except Exception as e:
         logger.exception("Ошибка в handle_photo")
         await update.message.reply_text("❌ Не удалось обработать фото.")
 
-# === ЗАПУСК ===
+# ========== АДМИН-КОМАНДА ДЛЯ ДОБАВЛЕНИЯ УПРАЖНЕНИЙ ==========
+async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда для добавления упражнения (только для админа)."""
+    if not is_admin(update):
+        await update.message.reply_text("⛔ Нет прав.")
+        return
+    if not context.args or len(context.args) < 2:
+        await update.message.reply_text("Использование: /addexercise <название> <reps|time> <описание>")
+        return
+    name = context.args[0]
+    metric = context.args[1]
+    description = " ".join(context.args[2:]) if len(context.args) > 2 else ""
+    from database import add_exercise
+    if add_exercise(name, description, metric):
+        await update.message.reply_text(f"✅ Упражнение '{name}' добавлено.")
+    else:
+        await update.message.reply_text(f"❌ Упражнение с таким именем уже существует.")
+
+# ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
     if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
-
-    # Инициализация базы данных
-    init_db()
-    logger.info("База данных готова к работе.")
 
     # Создаём цикл событий asyncio (обязательно для Python 3.14+)
     try:
@@ -277,7 +261,7 @@ def main():
 
     app = Application.builder().token(TOKEN).build()
 
-    # Регистрация обычных команд
+    # --- Регистрация старых обработчиков ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", show_menu))
     app.add_handler(CommandHandler("help", help_command))
@@ -286,15 +270,12 @@ def main():
     app.add_handler(CommandHandler("config", config_command))
     app.add_handler(CommandHandler("addexercise", add_exercise_command))
 
-    # Инлайн-кнопки (для фото и конфигурации)
-    app.add_handler(CallbackQueryHandler(button_handler, pattern='^(?!toggle_).*$'))
-    app.add_handler(CallbackQueryHandler(config_callback_handler, pattern='^toggle_'))
-
-    # Обработка фото и текста
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Диалог для записи тренировки (ConversationHandler)
+    # --- НОВЫЙ ДИАЛОГ ДЛЯ ТРЕНИРОВОК ---
     workout_conv = ConversationHandler(
         entry_points=[CommandHandler('wod', workout_start)],
         states={
@@ -305,13 +286,10 @@ def main():
         fallbacks=[CommandHandler('cancel', workout_cancel)],
     )
     app.add_handler(workout_conv)
+    # ---------------------------------------
 
     logger.info("🚀 Бот запущен...")
     app.run_polling()
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        logger.exception("💥 Критическая ошибка в main: %s", e)
-        raise
+    main()
