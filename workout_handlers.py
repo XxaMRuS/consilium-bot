@@ -2,7 +2,7 @@ import logging
 import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
-from database import add_user, get_exercises, add_workout
+from database import add_user, get_exercises, add_workout, get_user_level
 
 logger = logging.getLogger(__name__)
 
@@ -14,16 +14,21 @@ def get_current_week():
 
 async def workout_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    add_user(user.id, user.first_name, user.last_name, user.username)
+    # При первом запуске уровень уже должен быть установлен (по умолчанию beginner)
+    # Если нет, установим beginner (это может быть старый пользователь)
+    level = get_user_level(user.id)
+    # Но пользователя может не быть в БД, тогда добавим с уровнем beginner
+    add_user(user.id, user.first_name, user.last_name, user.username, level)
 
     current_week = get_current_week()
-    exercises = get_exercises(active_only=True, week=current_week)
+    # Показываем упражнения только для уровня пользователя
+    exercises = get_exercises(active_only=True, week=current_week, difficulty=level)
     if not exercises:
-        await update.message.reply_text("❌ На этой неделе нет активных упражнений. Загляни позже!")
+        await update.message.reply_text("❌ На этой неделе нет активных упражнений для твоего уровня. Загляни позже!")
         return ConversationHandler.END
 
     keyboard = []
-    for ex_id, name, metric, points, week in exercises:
+    for ex_id, name, metric, points, week, difficulty in exercises:
         btn_text = f"{name} ({points} баллов)" if points else name
         keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"ex_{ex_id}")])
     keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
@@ -43,7 +48,11 @@ async def exercise_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ex_id = int(query.data.split("_")[1])
     context.user_data['exercise_id'] = ex_id
 
-    exercises = get_exercises(active_only=True, week=get_current_week())
+    # Получим текущий уровень пользователя
+    user_id = update.effective_user.id
+    level = get_user_level(user_id)
+    current_week = get_current_week()
+    exercises = get_exercises(active_only=True, week=current_week, difficulty=level)
     ex_metric = None
     for ex in exercises:
         if ex[0] == ex_id:
@@ -84,7 +93,9 @@ async def video_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     exercise_id = context.user_data['exercise_id']
     result_value = context.user_data['result_value']
-    add_workout(user_id, exercise_id, result_value, video_link)
+    # Получаем текущий уровень пользователя
+    level = get_user_level(user_id)
+    add_workout(user_id, exercise_id, result_value, video_link, level)
     await update.message.reply_text(
         "✅ Тренировка успешно записана! Спасибо за честность.\n"
         "Можешь посмотреть свои результаты командой /mystats, а таблицу лидеров — /top."
