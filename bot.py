@@ -243,29 +243,48 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ========== АДМИН-КОМАНДЫ ДЛЯ УПРАЖНЕНИЙ ==========
 async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Добавляет упражнение с поддержкой кавычек в названии и описании."""
     if not is_admin(update):
         await update.message.reply_text("⛔ Нет прав.")
         return
-    if len(context.args) < 4:
+
+    # Получаем полный текст команды и удаляем саму команду
+    full_text = update.message.text
+    if ' ' not in full_text:
         await update.message.reply_text(
             "Использование: /addexercise <название> <reps|time> <описание> <баллы> [неделя]\n"
-            "Пример: /addexercise Приседания reps \"Приседания со штангой\" 10 15"
+            "Пример: /addexercise \"Берпочки 50 штук\" reps \"Берпочки любимые\" 10"
         )
         return
-    name = context.args[0]
-    metric = context.args[1]
+
+    args_part = full_text.split(maxsplit=1)[1]  # всё после команды
+    try:
+        args = shlex.split(args_part)
+    except ValueError as e:
+        await update.message.reply_text(f"❌ Ошибка в кавычках: {e}")
+        return
+
+    if len(args) < 4:
+        await update.message.reply_text("❌ Нужно минимум 4 аргумента: название тип описание баллы")
+        return
+
+    name = args[0]
+    metric = args[1]
     if metric not in ('reps', 'time'):
         await update.message.reply_text("❌ Тип упражнения должен быть 'reps' или 'time'.")
         return
+
     try:
-        if len(context.args) >= 5:
-            points = int(context.args[-2])
-            week = int(context.args[-1])
-            description = " ".join(context.args[2:-2])
+        # Определяем, есть ли неделя (последний аргумент может быть числом)
+        last = args[-1]
+        if last.isdigit():
+            week = int(last)
+            points = int(args[-2])
+            description = " ".join(args[2:-2])  # описание между типом и баллами
         else:
-            points = int(context.args[-1])
             week = 0
-            description = " ".join(context.args[2:-1])
+            points = int(last)
+            description = " ".join(args[2:-1])
     except ValueError:
         await update.message.reply_text("❌ Баллы должны быть числом.")
         return
