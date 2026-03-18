@@ -259,9 +259,9 @@ def main():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-    app = Application.builder().token(TOKEN).build()
+     app = Application.builder().token(TOKEN).build()
 
-    # --- Регистрация старых обработчиков ---
+    # --- Сначала регистрируем команды и диалог тренировок ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", show_menu))
     app.add_handler(CommandHandler("help", help_command))
@@ -270,14 +270,7 @@ def main():
     app.add_handler(CommandHandler("config", config_command))
     app.add_handler(CommandHandler("addexercise", add_exercise_command))
 
-    # Обработчик для фото-кнопок (только для известных стилей)
-photo_callbacks = ['sketch', 'anime', 'sepia', 'hardrock', 'pixel', 'neon', 'oil', 'watercolor', 'cartoon']
-app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
-    app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # --- НОВЫЙ ДИАЛОГ ДЛЯ ТРЕНИРОВОК ---
+    # --- ДИАЛОГ ТРЕНИРОВОК (теперь здесь) ---
     workout_conv = ConversationHandler(
         entry_points=[CommandHandler('wod', workout_start)],
         states={
@@ -288,7 +281,14 @@ app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sep
         fallbacks=[CommandHandler('cancel', workout_cancel)],
     )
     app.add_handler(workout_conv)
-    # ---------------------------------------
+
+    # --- А теперь общие обработчики колбэков ---
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
+
+    # --- И только потом обработчики сообщений ---
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     logger.info("🚀 Бот запущен...")
     app.run_polling()
