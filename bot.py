@@ -1,3 +1,7 @@
+from workout_handlers import (
+    workout_start, exercise_choice, result_input, video_input,
+    workout_cancel, EXERCISE, RESULT, VIDEO
+)
 import os
 import logging
 import asyncio
@@ -242,6 +246,17 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # Диалог для записи тренировки (ConversationHandler)
+    workout_conv = ConversationHandler(
+        entry_points=[CommandHandler('wod', workout_start)],
+        states={
+            EXERCISE: [CallbackQueryHandler(exercise_choice, pattern='^ex_')],
+            RESULT: [MessageHandler(filters.TEXT & ~filters.COMMAND, result_input)],
+            VIDEO: [MessageHandler(filters.TEXT & ~filters.COMMAND, video_input)],
+        },
+        fallbacks=[CommandHandler('cancel', workout_cancel)],
+    )
+    app.add_handler(workout_conv)
 
     logger.info("🚀 Бот запущен...")
     app.run_polling()
