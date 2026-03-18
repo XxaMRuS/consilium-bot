@@ -6,7 +6,7 @@ import os
 logger = logging.getLogger(__name__)
 
 DB_NAME = "workouts.db"
-EXERCISES_JSON = "exercises.json"  # файл с начальными упражнениями
+EXERCISES_JSON = "exercises.json"
 
 def init_db():
     """Создаёт таблицы и добавляет недостающие колонки."""
@@ -65,6 +65,44 @@ def init_db():
     conn.close()
     logger.info("База данных инициализирована.")
 
+    # Автоматическая загрузка упражнений из JSON, если база пуста
+    load_exercises_from_json_if_empty()
+
+def load_exercises_from_json_if_empty():
+    """Загружает упражнения из exercises.json, если таблица exercises пуста."""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM exercises")
+    count = cur.fetchone()[0]
+    conn.close()
+
+    if count == 0:
+        if not os.path.exists(EXERCISES_JSON):
+            logger.warning(f"Файл {EXERCISES_JSON} не найден, пропускаем автозагрузку.")
+            return
+        try:
+            with open(EXERCISES_JSON, 'r', encoding='utf-8') as f:
+                exercises = json.load(f)
+        except Exception as e:
+            logger.error(f"Ошибка чтения {EXERCISES_JSON}: {e}")
+            return
+
+        added = 0
+        for ex in exercises:
+            name = ex.get('name')
+            metric = ex.get('metric')
+            description = ex.get('description', '')
+            points = ex.get('points', 0)
+            week = ex.get('week', 0)
+            if add_exercise(name, description, metric, points, week):
+                added += 1
+        logger.info(f"Автозагрузка: добавлено {added} упражнений из {EXERCISES_JSON}.")
+    else:
+        logger.info("В базе уже есть упражнения, автозагрузка пропущена.")
+
+# Остальные функции (add_user, get_exercises, add_workout, add_exercise и т.д.) остаются без изменений.
+# Ниже они перечислены для полноты.
+
 def add_user(user_id, first_name, last_name, username):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
@@ -76,10 +114,6 @@ def add_user(user_id, first_name, last_name, username):
     conn.close()
 
 def get_exercises(active_only=True, week=None):
-    """
-    Возвращает список упражнений (id, name, metric, points, week).
-    Если week указан, то фильтрует: week = 0 или week = заданный.
-    """
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     query = "SELECT id, name, metric, points, week FROM exercises"
@@ -97,6 +131,14 @@ def get_exercises(active_only=True, week=None):
     conn.close()
     return exercises
 
+def get_all_exercises():
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, metric, points, week FROM exercises ORDER BY name")
+    exercises = cur.fetchall()
+    conn.close()
+    return exercises
+
 def add_workout(user_id, exercise_id, result_value, video_link):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
@@ -108,7 +150,6 @@ def add_workout(user_id, exercise_id, result_value, video_link):
     conn.close()
 
 def add_exercise(name, description, metric, points=0, week=0):
-    """Добавляет упражнение, если его ещё нет."""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     try:
@@ -124,7 +165,6 @@ def add_exercise(name, description, metric, points=0, week=0):
     return success
 
 def delete_exercise(exercise_id):
-    """Удаляет упражнение по ID."""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute("DELETE FROM exercises WHERE id = ?", (exercise_id,))
@@ -133,17 +173,7 @@ def delete_exercise(exercise_id):
     conn.close()
     return deleted
 
-def get_all_exercises():
-    """Возвращает список всех упражнений (id, name, metric, points, week)."""
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute("SELECT id, name, metric, points, week FROM exercises ORDER BY name")
-    exercises = cur.fetchall()
-    conn.close()
-    return exercises
-
 def set_exercise_week(exercise_id, week):
-    """Устанавливает неделю для упражнения (админ-функция)."""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute("UPDATE exercises SET week = ? WHERE id = ?", (week, exercise_id))
@@ -151,10 +181,6 @@ def set_exercise_week(exercise_id, week):
     conn.close()
 
 def get_user_stats(user_id, period=None):
-    """
-    Возвращает статистику пользователя: сумма баллов, количество тренировок.
-    period может быть 'day', 'week', 'month' – ограничивает дату.
-    """
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     query = """
@@ -174,12 +200,9 @@ def get_user_stats(user_id, period=None):
     cur.execute(query, params)
     result = cur.fetchone()
     conn.close()
-    return result  # (total_points, total_workouts)
+    return result
 
 def get_leaderboard(period=None, limit=10):
-    """
-    Возвращает топ пользователей по сумме баллов за указанный период.
-    """
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     query = """
@@ -203,42 +226,3 @@ def get_leaderboard(period=None, limit=10):
     results = cur.fetchall()
     conn.close()
     return results
-
-# === АВТОЗАГРУЗКА УПРАЖНЕНИЙ ИЗ JSON ===
-def load_initial_exercises():
-    """Загружает упражнения из exercises.json, если таблица пуста."""
-    if not os.path.exists(EXERCISES_JSON):
-        logger.info(f"Файл {EXERCISES_JSON} не найден, пропускаем автозагрузку.")
-        return
-
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM exercises")
-    count = cur.fetchone()[0]
-    if count > 0:
-        logger.info("Таблица упражнений не пуста, автозагрузка не требуется.")
-        conn.close()
-        return
-
-    try:
-        with open(EXERCISES_JSON, 'r', encoding='utf-8') as f:
-            exercises = json.load(f)
-    except Exception as e:
-        logger.error(f"Ошибка чтения {EXERCISES_JSON}: {e}")
-        conn.close()
-        return
-
-    for ex in exercises:
-        try:
-            cur.execute("""
-                INSERT INTO exercises (name, description, metric, points, week)
-                VALUES (?, ?, ?, ?, ?)
-            """, (ex['name'], ex['description'], ex['metric'], ex['points'], ex.get('week', 0)))
-        except sqlite3.IntegrityError:
-            logger.warning(f"Упражнение '{ex['name']}' уже существует, пропускаем.")
-        except Exception as e:
-            logger.error(f"Ошибка при добавлении {ex['name']}: {e}")
-
-    conn.commit()
-    conn.close()
-    logger.info(f"Автозагрузка завершена: загружено упражнений из {EXERCISES_JSON}.")
