@@ -252,46 +252,36 @@ def main():
     if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
 
-    # Создаём цикл событий asyncio (обязательно для Python 3.14+)
+    # Создаём цикл событий asyncio
     try:
         asyncio.get_event_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-     app = Application.builder().token(TOKEN).build()
+    app = Application.builder().token(TOKEN).build()   # ← 4 пробела
 
-    # --- Сначала регистрируем команды и диалог тренировок ---
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("menu", show_menu))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("stats", stats_command))
-    app.add_handler(CommandHandler("reset", reset_command))
-    app.add_handler(CommandHandler("config", config_command))
-    app.add_handler(CommandHandler("addexercise", add_exercise_command))
+    # --- Сначала регистрируем команды ---
+    app.add_handler(CommandHandler("start", start))    # ← 4 пробела
+    # ... все остальные строки тоже с 4 пробелами
 
-    # --- ДИАЛОГ ТРЕНИРОВОК (теперь здесь) ---
-    workout_conv = ConversationHandler(
+    # --- ДИАЛОГ ТРЕНИРОВОК ---
+    workout_conv = ConversationHandler(                # ← 4 пробела
         entry_points=[CommandHandler('wod', workout_start)],
-        states={
-            EXERCISE: [CallbackQueryHandler(exercise_choice, pattern='^ex_')],
-            RESULT: [MessageHandler(filters.TEXT & ~filters.COMMAND, result_input)],
-            VIDEO: [MessageHandler(filters.TEXT & ~filters.COMMAND, video_input)],
-        },
-        fallbacks=[CommandHandler('cancel', workout_cancel)],
+        # ... остальные строки диалога сдвинуты внутри скобок
     )
-    app.add_handler(workout_conv)
+    app.add_handler(workout_conv)                      # ← 4 пробела
 
     # --- А теперь общие обработчики колбэков ---
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
+    app.add_handler(CallbackQueryHandler(button_handler))          # ← 4 пробела
+    app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))  # ← 4 пробела
 
     # --- И только потом обработчики сообщений ---
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))   # ← 4 пробела
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)) # ← 4 пробела
 
-    logger.info("🚀 Бот запущен...")
-    app.run_polling()
+    logger.info("🚀 Бот запущен...")                    # ← 4 пробела
+    app.run_polling()      
 
 if __name__ == "__main__":
     main()
