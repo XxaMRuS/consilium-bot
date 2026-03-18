@@ -208,3 +208,11 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        logger.exception("💥 Критическая ошибка в main: %s", e)
+        # Принудительно завершаем процесс, чтобы Render перезапустил бота
+        raise
