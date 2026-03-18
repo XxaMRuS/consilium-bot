@@ -1,6 +1,7 @@
 import os
 import requests
 import logging
+import google.generativeai as genai
 from collections import deque
 from dotenv import load_dotenv
 
@@ -19,6 +20,7 @@ ENABLED_PROVIDERS = {
     "groq": True,
     "yandex": True,
     "deepseek_old": False,
+    "gemini_old": False,
 }
 
 if not all([YANDEX_API_KEY, YANDEX_FOLDER_ID, DEEPSEEK_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY]):
@@ -66,8 +68,8 @@ FREE_MODELS = [
     "openrouter/free"
 ]
 
-# === ИСТОРИЯ ДИАЛОГА ===
-history = deque(maxlen=5)
+# === ИСТОРИЯ ДИАЛОГА УДАЛЕНА – БУДЕТ ХРАНИТЬСЯ В context.user_data ===
+# (глобальная переменная history удалена)
 
 # === СТАТИСТИКА ===
 stats = {
@@ -183,6 +185,26 @@ def ask_yandex(text):
         update_stats(False, "YandexGPT")
         raise
 
+# === СТАРЫЙ DEEPSEEK (запасной) ===
+def ask_deepseek(text):
+    url = "https://api.deepseek.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}"}
+    data = {
+        "model": "deepseek-chat",
+        "messages": [{"role": "user", "content": text}]
+    }
+    try:
+        response = requests.post(url, json=data, headers=headers, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        content = response.json()['choices'][0]['message']['content']
+        log_info("DeepSeek успешно ответил")
+        update_stats(True, "DeepSeek (old)")
+        return content
+    except Exception as e:
+        log_error("DeepSeek error", e)
+        update_stats(False, "DeepSeek (old)")
+        raise
+
 # === СТАРЫЙ GEMINI (запасной) ===
 def ask_gemini(text):
     client = genai.Client(api_key=GEMINI_API_KEY)
@@ -232,13 +254,23 @@ def ask_any_ai(text, system_prompt=None, role_name="unknown"):
         except Exception as e:
             log_error(f"DeepSeek(old) {role_name} failed", e)
 
+    if ENABLED_PROVIDERS["gemini_old"]:
+        try:
+            full_text = text
+            if system_prompt:
+                full_text = f"{system_prompt}\n\n{text}"
+            return ask_gemini(full_text)
+        except Exception as e:
+            log_error(f"Gemini(old) {role_name} failed", e)
+
     raise Exception("Все включённые AI недоступны")
 
-def get_primary_answer(question):
+# === ПОЛУЧЕНИЕ ПЕРВИЧНОГО ОТВЕТА (теперь принимает user_history) ===
+def get_primary_answer(question, user_history):
     context = ""
-    if history:
+    if user_history:
         context = "Предыдущий диалог:\n"
-        for i, (q, a) in enumerate(history, 1):
+        for i, (q, a) in enumerate(user_history, 1):
             context += f"Вопрос {i}: {q}\nОтвет {i}: {a}\n"
         context += "\n"
     full_question = context + question if context else question
@@ -280,9 +312,10 @@ def print_stats():
         print(f"  {model}: {count} раз(а)")
     print("------------------------------------\n")
 
-def start_consilium(question):
+# === ГЛАВНАЯ ФУНКЦИЯ (теперь принимает user_history) ===
+def start_consilium(question, user_history):
     log_info(f"Новый запрос: {question}")
-    primary_answer, primary_source = get_primary_answer(question)
+    primary_answer, primary_source = get_primary_answer(question, user_history)
     if not primary_answer:
         print_stats()
         return "❌ Не удалось получить ответ ни от одного AI."
@@ -290,6 +323,8 @@ def start_consilium(question):
     analysis = get_analysis(question, primary_answer, primary_source)
     final_answer = get_synthesis(question, primary_answer, primary_source, analysis)
 
-    history.append((question, final_answer))
+    # Добавляем в историю пользователя
+    user_history.append((question, final_answer))
+    
     print_stats()
     return final_answer
