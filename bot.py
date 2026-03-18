@@ -2,10 +2,13 @@ import os
 import logging
 import asyncio
 import re
+import shlex
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
 from datetime import datetime
+
+
 
 # === ИМПОРТЫ ДЛЯ ТЕЛЕГРАМА И КНОПОК ===
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
