@@ -6,22 +6,19 @@ from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
 
-# === ИМПОРТЫ ДЛЯ ТЕЛЕГРАМА И КНОПОК ===
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     filters, ContextTypes, ConversationHandler
 )
 
-# === ТВОИ ЛОКАЛЬНЫЕ МОДУЛИ ===
-from ai_work import start_consilium, stats as consilium_stats, ENABLED_PROVIDERS  # history убран
+from ai_work import start_consilium, stats as consilium_stats, ENABLED_PROVIDERS
 from photo_processor import (
     convert_to_sketch, convert_to_anime, convert_to_sepia, 
     convert_to_hard_rock, convert_to_pixel, convert_to_neon, 
     convert_to_oil, convert_to_watercolor, convert_to_cartoon
 )
 
-# === ИМПОРТЫ ДЛЯ БАЗЫ ДАННЫХ И ТРЕНИРОВОК ===
 from database import init_db, add_user, get_exercises, add_workout, add_exercise
 from workout_handlers import (
     workout_start, exercise_choice, result_input, video_input,
@@ -35,7 +32,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# === ТОКЕН БОТА (БЕРЁТСЯ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ) ===
+# === ТОКЕН БОТА ===
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_USER_ID", 0))
 
@@ -57,7 +54,7 @@ def clean_markdown(text):
 def is_admin(update: Update) -> bool:
     return update.effective_user.id == ADMIN_ID
 
-# === ПРОСТОЙ HTTP-СЕРВЕР ДЛЯ RENDER ===
+# === HTTP-СЕРВЕР ДЛЯ RENDER ===
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -77,18 +74,15 @@ Thread(target=run_http_server, daemon=True).start()
 # === ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ===
 init_db()
 logger.info("База данных готова к работе.")
-from database import load_exercises_from_json
-load_exercises_from_json()
-logger.info("Проверка и загрузка упражнений из JSON выполнена.")
 
-# ========== ОСНОВНЫЕ ОБРАБОТЧИКИ КОМАНД ==========
+# ========== ОСНОВНЫЕ КОМАНДЫ ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🚀 Привет! Я твой AI-консилиум и фитнес-трекер.\n\n"
         "Команды:\n"
         "/menu — выбрать стиль для фото\n"
         "/stats — статистика AI\n"
-        "/reset — сбросить историю диалога\n"
+        "/reset — сбросить свою историю диалога\n"
         "/help — помощь\n"
         "/wod — записать тренировку"
     )
@@ -118,7 +112,6 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode='Markdown')
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Очищаем только историю текущего пользователя
     if 'user_history' in context.user_data:
         context.user_data['user_history'].clear()
     await update.message.reply_text("🔄 Твоя личная история диалога очищена.")
@@ -129,18 +122,18 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔹 `/start` - Запуск\n"
         "🔹 `/menu` - Выбор эффекта для фото\n"
         "🔹 `/stats` - Статистика AI\n"
-        "🔹 `/reset` - Очистить свою историю диалога\n"
+        "🔹 `/reset` - Очистить свою историю\n"
         "🔹 `/help` - Помощь\n"
-        "🔹 `/config` - Настройки AI (только админ)\n"
+        "🔹 `/config` - Настройки AI (админ)\n"
         "🔹 `/wod` - Записать тренировку\n\n"
         "Просто отправь текст, чтобы спросить ИИ, или фото (после выбора стиля в /menu)."
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
-# ========== КОНФИГУРАЦИЯ КОНСИЛИУМА (ТОЛЬКО ДЛЯ АДМИНА) ==========
+# ========== КОНФИГУРАЦИЯ AI (ТОЛЬКО АДМИН) ==========
 async def config_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
-        await update.message.reply_text("⛔ У вас нет прав на эту команду.")
+        await update.message.reply_text("⛔ Нет прав.")
         return
     keyboard = []
     for provider, enabled in ENABLED_PROVIDERS.items():
@@ -160,9 +153,9 @@ async def config_callback_handler(update: Update, context: ContextTypes.DEFAULT_
     if query.from_user.id != ADMIN_ID:
         await query.edit_message_text("⛔ Недоступно.")
         return
-    callback_data = query.data
-    if callback_data.startswith("toggle_"):
-        provider = callback_data.replace("toggle_", "")
+    data = query.data
+    if data.startswith("toggle_"):
+        provider = data.replace("toggle_", "")
         if provider in ENABLED_PROVIDERS:
             ENABLED_PROVIDERS[provider] = not ENABLED_PROVIDERS[provider]
             keyboard = []
@@ -182,10 +175,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_question = update.message.text
     await update.message.chat.send_action(action="typing")
     try:
-        # Получаем историю пользователя (создаём, если нет)
         if 'user_history' not in context.user_data:
-            context.user_data['user_history'] = deque(maxlen=5)  # используем deque как в ai_work
-        
+            context.user_data['user_history'] = deque(maxlen=5)
         answer = start_consilium(user_question, context.user_data['user_history'])
         clean_answer = clean_markdown(answer)
         if len(clean_answer) > 4000:
@@ -238,30 +229,40 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("Ошибка в handle_photo")
         await update.message.reply_text("❌ Не удалось обработать фото.")
 
-# ========== АДМИН-КОМАНДА ДЛЯ ДОБАВЛЕНИЯ УПРАЖНЕНИЙ ==========
+# ========== АДМИН-КОМАНДА ДЛЯ УПРАЖНЕНИЙ ==========
 async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
         await update.message.reply_text("⛔ Нет прав.")
         return
-    if not context.args or len(context.args) < 2:
-        await update.message.reply_text("Использование: /addexercise <название> <reps|time> <описание>")
+    if len(context.args) < 4:
+        await update.message.reply_text(
+            "Использование: /addexercise <название> <reps|time> <описание> <баллы>\n"
+            "Пример: /addexercise Приседания reps 'Приседания со штангой' 10"
+        )
         return
+
     name = context.args[0]
     metric = context.args[1]
-    description = " ".join(context.args[2:]) if len(context.args) > 2 else ""
-    if add_exercise(name, description, metric):
-        await update.message.reply_text(f"✅ Упражнение '{name}' добавлено.")
+    try:
+        points = int(context.args[-1])
+    except ValueError:
+        await update.message.reply_text("❌ Баллы должны быть числом.")
+        return
+
+    description = " ".join(context.args[2:-1])
+    if add_exercise(name, description, metric, points):
+        await update.message.reply_text(f"✅ Упражнение '{name}' добавлено с баллами: {points}.")
     else:
         await update.message.reply_text(f"❌ Упражнение с таким именем уже существует.")
 
-# ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
+# ========== ОСНОВНАЯ ФУНКЦИЯ ==========
 def main():
     if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
 
     app = Application.builder().token(TOKEN).build()
 
-    # --- Обычные команды ---
+    # Команды
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", show_menu))
     app.add_handler(CommandHandler("help", help_command))
@@ -270,7 +271,7 @@ def main():
     app.add_handler(CommandHandler("config", config_command))
     app.add_handler(CommandHandler("addexercise", add_exercise_command))
 
-    # --- ДИАЛОГ ТРЕНИРОВОК ---
+    # Диалог тренировок
     workout_conv = ConversationHandler(
         entry_points=[CommandHandler('wod', workout_start)],
         states={
@@ -282,11 +283,11 @@ def main():
     )
     app.add_handler(workout_conv)
 
-    # --- Обработчики колбэков ---
+    # Обработчики колбэков
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
 
-    # --- Обработчики сообщений ---
+    # Обработчики сообщений
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
