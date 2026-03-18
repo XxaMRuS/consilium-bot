@@ -87,3 +87,50 @@ def add_exercise(name, description, metric):
         success = False
     conn.close()
     return success
+    import json
+import os
+
+def load_exercises_from_json(json_file='exercises.json'):
+    """Загружает упражнения из JSON-файла в базу, если таблица пуста."""
+    # Проверяем, есть ли уже упражнения
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM exercises")
+    count = cur.fetchone()[0]
+    conn.close()
+
+    if count > 0:
+        logger.info("В базе уже есть упражнения, пропускаем загрузку из JSON.")
+        return
+
+    # Если файл не существует, выходим
+    if not os.path.exists(json_file):
+        logger.warning(f"Файл {json_file} не найден. Упражнения не загружены.")
+        return
+
+    # Загружаем данные из JSON
+    try:
+        with open(json_file, 'r', encoding='utf-8') as f:
+            exercises = json.load(f)
+    except Exception as e:
+        logger.error(f"Ошибка при чтении {json_file}: {e}")
+        return
+
+    # Добавляем каждое упражнение в базу
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    added = 0
+    for ex in exercises:
+        try:
+            cur.execute("""
+                INSERT INTO exercises (name, description, metric)
+                VALUES (?, ?, ?)
+            """, (ex['name'], ex.get('description', ''), ex['metric']))
+            added += 1
+        except sqlite3.IntegrityError:
+            logger.warning(f"Упражнение '{ex['name']}' уже существует, пропускаем.")
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении упражнения {ex.get('name')}: {e}")
+    conn.commit()
+    conn.close()
+    logger.info(f"Загружено {added} новых упражнений из {json_file}.")
