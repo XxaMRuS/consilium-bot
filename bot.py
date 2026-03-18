@@ -5,13 +5,16 @@ import re
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
+from datetime import datetime
 
+# === ИМПОРТЫ ДЛЯ ТЕЛЕГРАМА И КНОПОК ===
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     filters, ContextTypes, ConversationHandler
 )
 
+# === ТВОИ ЛОКАЛЬНЫЕ МОДУЛИ ===
 from ai_work import start_consilium, stats as consilium_stats, ENABLED_PROVIDERS
 from photo_processor import (
     convert_to_sketch, convert_to_anime, convert_to_sepia, 
@@ -19,7 +22,11 @@ from photo_processor import (
     convert_to_oil, convert_to_watercolor, convert_to_cartoon
 )
 
-from database import init_db, add_user, get_exercises, add_workout, add_exercise
+# === ИМПОРТЫ ДЛЯ БАЗЫ ДАННЫХ И ТРЕНИРОВОК ===
+from database import (
+    init_db, add_user, get_exercises, add_workout, add_exercise,
+    set_exercise_week, get_user_stats, get_leaderboard
+)
 from workout_handlers import (
     workout_start, exercise_choice, result_input, video_input,
     workout_cancel, EXERCISE, RESULT, VIDEO
@@ -32,7 +39,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# === ТОКЕН БОТА ===
+# === ТОКЕН БОТА (БЕРЁТСЯ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ) ===
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_USER_ID", 0))
 
@@ -54,7 +61,7 @@ def clean_markdown(text):
 def is_admin(update: Update) -> bool:
     return update.effective_user.id == ADMIN_ID
 
-# === HTTP-СЕРВЕР ДЛЯ RENDER ===
+# === ПРОСТОЙ HTTP-СЕРВЕР ДЛЯ RENDER ===
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -75,16 +82,18 @@ Thread(target=run_http_server, daemon=True).start()
 init_db()
 logger.info("База данных готова к работе.")
 
-# ========== ОСНОВНЫЕ КОМАНДЫ ==========
+# ========== ОСНОВНЫЕ ОБРАБОТЧИКИ КОМАНД ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🚀 Привет! Я твой AI-консилиум и фитнес-трекер.\n\n"
         "Команды:\n"
         "/menu — выбрать стиль для фото\n"
         "/stats — статистика AI\n"
-        "/reset — сбросить свою историю диалога\n"
+        "/reset — сбросить историю диалога\n"
         "/help — помощь\n"
-        "/wod — записать тренировку"
+        "/wod — записать тренировку\n"
+        "/mystats — моя статистика\n"
+        "/top — таблица лидеров"
     )
 
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -122,18 +131,21 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔹 `/start` - Запуск\n"
         "🔹 `/menu` - Выбор эффекта для фото\n"
         "🔹 `/stats` - Статистика AI\n"
-        "🔹 `/reset` - Очистить свою историю\n"
+        "🔹 `/reset` - Очистить свою историю диалога\n"
         "🔹 `/help` - Помощь\n"
-        "🔹 `/config` - Настройки AI (админ)\n"
-        "🔹 `/wod` - Записать тренировку\n\n"
+        "🔹 `/config` - Настройки AI (только админ)\n"
+        "🔹 `/wod` - Записать тренировку\n"
+        "🔹 `/mystats [day|week|month]` - Моя статистика\n"
+        "🔹 `/top [day|week|month]` - Таблица лидеров\n"
+        "🔹 `/setweek <id> <неделя>` - Установить неделю для упражнения (админ)\n\n"
         "Просто отправь текст, чтобы спросить ИИ, или фото (после выбора стиля в /menu)."
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
-# ========== КОНФИГУРАЦИЯ AI (ТОЛЬКО АДМИН) ==========
+# ========== КОНФИГУРАЦИЯ КОНСИЛИУМА (ТОЛЬКО ДЛЯ АДМИНА) ==========
 async def config_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
-        await update.message.reply_text("⛔ Нет прав.")
+        await update.message.reply_text("⛔ У вас нет прав на эту команду.")
         return
     keyboard = []
     for provider, enabled in ENABLED_PROVIDERS.items():
@@ -153,9 +165,9 @@ async def config_callback_handler(update: Update, context: ContextTypes.DEFAULT_
     if query.from_user.id != ADMIN_ID:
         await query.edit_message_text("⛔ Недоступно.")
         return
-    data = query.data
-    if data.startswith("toggle_"):
-        provider = data.replace("toggle_", "")
+    callback_data = query.data
+    if callback_data.startswith("toggle_"):
+        provider = callback_data.replace("toggle_", "")
         if provider in ENABLED_PROVIDERS:
             ENABLED_PROVIDERS[provider] = not ENABLED_PROVIDERS[provider]
             keyboard = []
@@ -229,40 +241,92 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("Ошибка в handle_photo")
         await update.message.reply_text("❌ Не удалось обработать фото.")
 
-# ========== АДМИН-КОМАНДА ДЛЯ УПРАЖНЕНИЙ ==========
+# ========== АДМИН-КОМАНДЫ ДЛЯ УПРАЖНЕНИЙ ==========
 async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
         await update.message.reply_text("⛔ Нет прав.")
         return
     if len(context.args) < 4:
         await update.message.reply_text(
-            "Использование: /addexercise <название> <reps|time> <описание> <баллы>\n"
-            "Пример: /addexercise Приседания reps 'Приседания со штангой' 10"
+            "Использование: /addexercise <название> <reps|time> <описание> <баллы> [неделя]\n"
+            "Пример: /addexercise Приседания reps 'Приседания со штангой' 10 15"
         )
         return
-
     name = context.args[0]
     metric = context.args[1]
     try:
-        points = int(context.args[-1])
+        points = int(context.args[-2])
     except ValueError:
         await update.message.reply_text("❌ Баллы должны быть числом.")
         return
-
-    description = " ".join(context.args[2:-1])
-    if add_exercise(name, description, metric, points):
-        await update.message.reply_text(f"✅ Упражнение '{name}' добавлено с баллами: {points}.")
+    week = 0
+    if len(context.args) > 4:
+        try:
+            week = int(context.args[-1])
+        except ValueError:
+            await update.message.reply_text("❌ Неделя должна быть числом.")
+            return
+    description = " ".join(context.args[2:-2]) if len(context.args) > 4 else " ".join(context.args[2:-1])
+    if add_exercise(name, description, metric, points, week):
+        await update.message.reply_text(f"✅ Упражнение '{name}' добавлено (баллы: {points}, неделя: {week}).")
     else:
         await update.message.reply_text(f"❌ Упражнение с таким именем уже существует.")
 
-# ========== ОСНОВНАЯ ФУНКЦИЯ ==========
+async def set_week_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await update.message.reply_text("⛔ Нет прав.")
+        return
+    if len(context.args) != 2:
+        await update.message.reply_text("Использование: /setweek <id упражнения> <неделя>")
+        return
+    try:
+        ex_id = int(context.args[0])
+        week = int(context.args[1])
+    except ValueError:
+        await update.message.reply_text("❌ ID и неделя должны быть числами.")
+        return
+    set_exercise_week(ex_id, week)
+    await update.message.reply_text(f"✅ Для упражнения с ID {ex_id} установлена неделя {week}.")
+
+# ========== СТАТИСТИКА ==========
+async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    period = context.args[0] if context.args else None
+    if period and period not in ('day', 'week', 'month'):
+        await update.message.reply_text("❌ Неверный период. Используй: day, week, month")
+        return
+    total_points, total_workouts = get_user_stats(user_id, period)
+    period_text = f" за {period}" if period else " за всё время"
+    text = f"📊 **Твоя статистика{period_text}:**\n"
+    text += f"🏋️ Тренировок: {total_workouts or 0}\n"
+    text += f"⭐ Баллов: {total_points or 0}"
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    period = context.args[0] if context.args else None
+    if period and period not in ('day', 'week', 'month'):
+        await update.message.reply_text("❌ Неверный период. Используй: day, week, month")
+        return
+    limit = 10
+    leaderboard = get_leaderboard(period, limit)
+    if not leaderboard:
+        await update.message.reply_text("Пока нет данных для таблицы лидеров.")
+        return
+    period_text = f" за {period}" if period else " за всё время"
+    text = f"🏆 **Топ-{limit}{period_text}:**\n"
+    for i, (uid, first_name, username, total) in enumerate(leaderboard, 1):
+        name = first_name or username or f"User{uid}"
+        text += f"{i}. {name} — {total} баллов\n"
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+# ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
     if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
 
     app = Application.builder().token(TOKEN).build()
 
-    # Команды
+    # --- Обычные команды ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", show_menu))
     app.add_handler(CommandHandler("help", help_command))
@@ -270,12 +334,15 @@ def main():
     app.add_handler(CommandHandler("reset", reset_command))
     app.add_handler(CommandHandler("config", config_command))
     app.add_handler(CommandHandler("addexercise", add_exercise_command))
+    app.add_handler(CommandHandler("setweek", set_week_command))
+    app.add_handler(CommandHandler("mystats", mystats_command))
+    app.add_handler(CommandHandler("top", top_command))
 
-    # Диалог тренировок
+    # --- ДИАЛОГ ТРЕНИРОВОК ---
     workout_conv = ConversationHandler(
         entry_points=[CommandHandler('wod', workout_start)],
         states={
-            EXERCISE: [CallbackQueryHandler(exercise_choice, pattern='^ex_')],
+            EXERCISE: [CallbackQueryHandler(exercise_choice, pattern='^ex_|^cancel$')],
             RESULT: [MessageHandler(filters.TEXT & ~filters.COMMAND, result_input)],
             VIDEO: [MessageHandler(filters.TEXT & ~filters.COMMAND, video_input)],
         },
@@ -283,11 +350,11 @@ def main():
     )
     app.add_handler(workout_conv)
 
-    # Обработчики колбэков
+    # --- Обработчики колбэков ---
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
 
-    # Обработчики сообщений
+    # --- Обработчики сообщений ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
