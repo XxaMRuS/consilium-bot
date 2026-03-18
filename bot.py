@@ -243,32 +243,51 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ========== АДМИН-КОМАНДЫ ДЛЯ УПРАЖНЕНИЙ ==========
 async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Добавляет упражнение с баллами и опциональной неделей."""
     if not is_admin(update):
         await update.message.reply_text("⛔ Нет прав.")
         return
+
     if len(context.args) < 4:
         await update.message.reply_text(
             "Использование: /addexercise <название> <reps|time> <описание> <баллы> [неделя]\n"
-            "Пример: /addexercise Приседания reps 'Приседания со штангой' 10 15"
+            "Пример: /addexercise Приседания reps \"Приседания со штангой\" 10 15\n"
+            "Если название или описание в кавычках — это один аргумент."
         )
         return
-    name = context.args[0]
+
+    # Определяем тип метрики (должен быть вторым аргументом)
     metric = context.args[1]
+    if metric not in ('reps', 'time'):
+        await update.message.reply_text("❌ Тип упражнения должен быть 'reps' или 'time'.")
+        return
+
+    # Последний аргумент — неделя (если есть) или баллы
+    # Предпоследний — баллы, если неделя указана, иначе последний
     try:
-        points = int(context.args[-2])
+        # Проверяем, указана ли неделя (последний аргумент может быть числом)
+        last = context.args[-1]
+        if last.isdigit():
+            # Если последний — число, то это неделя
+            week = int(last)
+            points = int(context.args[-2])
+            # Описание — всё между вторым и предпоследним
+            description = " ".join(context.args[2:-2])
+        else:
+            # Если последний — не число, то неделя не указана (week=0)
+            week = 0
+            points = int(last)
+            description = " ".join(context.args[2:-1])
     except ValueError:
         await update.message.reply_text("❌ Баллы должны быть числом.")
         return
-    week = 0
-    if len(context.args) > 4:
-        try:
-            week = int(context.args[-1])
-        except ValueError:
-            await update.message.reply_text("❌ Неделя должна быть числом.")
-            return
-    description = " ".join(context.args[2:-2]) if len(context.args) > 4 else " ".join(context.args[2:-1])
+
+    # Название — первый аргумент
+    name = context.args[0]
+
     if add_exercise(name, description, metric, points, week):
-        await update.message.reply_text(f"✅ Упражнение '{name}' добавлено (баллы: {points}, неделя: {week}).")
+        week_text = f", неделя: {week}" if week != 0 else ""
+        await update.message.reply_text(f"✅ Упражнение '{name}' добавлено (баллы: {points}{week_text}).")
     else:
         await update.message.reply_text(f"❌ Упражнение с таким именем уже существует.")
 
