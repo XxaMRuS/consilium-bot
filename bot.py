@@ -77,6 +77,9 @@ Thread(target=run_http_server, daemon=True).start()
 # === ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ===
 init_db()
 logger.info("База данных готова к работе.")
+from database import load_exercises_from_json
+load_exercises_from_json()
+logger.info("Проверка и загрузка упражнений из JSON выполнена.")
 
 # ========== ОСНОВНЫЕ ОБРАБОТЧИКИ КОМАНД ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
