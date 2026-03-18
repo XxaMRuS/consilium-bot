@@ -4,7 +4,6 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-# Название файла базы данных
 DB_NAME = "workouts.db"
 
 def init_db():
@@ -12,7 +11,6 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
 
-    # Таблица пользователей (чтобы не спамить повторяющейся информацией)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -23,24 +21,22 @@ def init_db():
         )
     """)
 
-    # Таблица упражнений (список доступных упражнений)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS exercises (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,
             description TEXT,
-            metric TEXT NOT NULL,  -- 'reps' или 'time'
+            metric TEXT NOT NULL,
             is_active BOOLEAN DEFAULT 1
         )
     """)
 
-    # Таблица результатов тренировок
     cur.execute("""
         CREATE TABLE IF NOT EXISTS workouts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             exercise_id INTEGER NOT NULL,
-            result_value TEXT NOT NULL,   -- число повторений или время (например, "50" или "03:20")
+            result_value TEXT NOT NULL,
             video_link TEXT NOT NULL,
             performed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(user_id),
@@ -53,7 +49,6 @@ def init_db():
     logger.info("База данных инициализирована.")
 
 def add_user(user_id, first_name, last_name, username):
-    """Добавляет пользователя в таблицу users (если его ещё нет)."""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute("""
@@ -64,7 +59,6 @@ def add_user(user_id, first_name, last_name, username):
     conn.close()
 
 def get_exercises(active_only=True):
-    """Возвращает список упражнений (id, name, metric)."""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     if active_only:
@@ -76,7 +70,6 @@ def get_exercises(active_only=True):
     return exercises
 
 def add_workout(user_id, exercise_id, result_value, video_link):
-    """Сохраняет результат тренировки."""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute("""
@@ -87,7 +80,6 @@ def add_workout(user_id, exercise_id, result_value, video_link):
     conn.close()
 
 def add_exercise(name, description, metric):
-    """Добавляет новое упражнение (для админа)."""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     try:
@@ -101,5 +93,3 @@ def add_exercise(name, description, metric):
         success = False
     conn.close()
     return success
-
-# Можно добавить функции для получения статистики позже
