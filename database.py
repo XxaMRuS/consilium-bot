@@ -1,12 +1,13 @@
 import sqlite3
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 DB_NAME = "workouts.db"
 
 def init_db():
-    """Создаёт таблицы, если их ещё нет, и добавляет колонку points, если отсутствует."""
+    """Создаёт таблицы и добавляет недостающие колонки."""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
 
@@ -28,16 +29,21 @@ def init_db():
             name TEXT UNIQUE NOT NULL,
             description TEXT,
             metric TEXT NOT NULL,
+            points INTEGER DEFAULT 0,
+            week INTEGER DEFAULT 0,  -- 0 = всегда активно, иначе номер недели
             is_active BOOLEAN DEFAULT 1
         )
     """)
 
-    # Проверяем, есть ли колонка points, если нет — добавляем
+    # Проверяем наличие колонок (для старых баз)
     cur.execute("PRAGMA table_info(exercises)")
     columns = [col[1] for col in cur.fetchall()]
     if 'points' not in columns:
         cur.execute("ALTER TABLE exercises ADD COLUMN points INTEGER DEFAULT 0")
-        logger.info("Колонка 'points' добавлена в таблицу exercises.")
+        logger.info("Колонка 'points' добавлена в exercises.")
+    if 'week' not in columns:
+        cur.execute("ALTER TABLE exercises ADD COLUMN week INTEGER DEFAULT 0")
+        logger.info("Колонка 'week' добавлена в exercises.")
 
     # Таблица результатов тренировок
     cur.execute("""
@@ -58,7 +64,6 @@ def init_db():
     logger.info("База данных инициализирована.")
 
 def add_user(user_id, first_name, last_name, username):
-    """Добавляет пользователя в таблицу users (если его ещё нет)."""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute("""
@@ -68,20 +73,29 @@ def add_user(user_id, first_name, last_name, username):
     conn.commit()
     conn.close()
 
-def get_exercises(active_only=True):
-    """Возвращает список упражнений (id, name, metric, points)."""
+def get_exercises(active_only=True, week=None):
+    """
+    Возвращает список упражнений (id, name, metric, points, week).
+    Если week указан, то фильтрует: week = 0 или week = заданный.
+    """
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
+    query = "SELECT id, name, metric, points, week FROM exercises"
+    conditions = []
+    params = []
     if active_only:
-        cur.execute("SELECT id, name, metric, points FROM exercises WHERE is_active = 1")
-    else:
-        cur.execute("SELECT id, name, metric, points FROM exercises")
+        conditions.append("is_active = 1")
+    if week is not None:
+        conditions.append("(week = 0 OR week = ?)")
+        params.append(week)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    cur.execute(query, params)
     exercises = cur.fetchall()
     conn.close()
     return exercises
 
 def add_workout(user_id, exercise_id, result_value, video_link):
-    """Сохраняет результат тренировки."""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute("""
@@ -91,18 +105,79 @@ def add_workout(user_id, exercise_id, result_value, video_link):
     conn.commit()
     conn.close()
 
-def add_exercise(name, description, metric, points=0):
-    """Добавляет новое упражнение с баллами (по умолчанию 0)."""
+def add_exercise(name, description, metric, points=0, week=0):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     try:
         cur.execute("""
-            INSERT INTO exercises (name, description, metric, points)
-            VALUES (?, ?, ?, ?)
-        """, (name, description, metric, points))
+            INSERT INTO exercises (name, description, metric, points, week)
+            VALUES (?, ?, ?, ?, ?)
+        """, (name, description, metric, points, week))
         conn.commit()
         success = True
     except sqlite3.IntegrityError:
         success = False
     conn.close()
     return success
+
+def set_exercise_week(exercise_id, week):
+    """Устанавливает неделю для упражнения (админ-функция)."""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("UPDATE exercises SET week = ? WHERE id = ?", (week, exercise_id))
+    conn.commit()
+    conn.close()
+
+def get_user_stats(user_id, period=None):
+    """
+    Возвращает статистику пользователя: сумма баллов, количество тренировок.
+    period может быть 'day', 'week', 'month' – ограничивает дату.
+    """
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    query = """
+        SELECT SUM(e.points), COUNT(w.id)
+        FROM workouts w
+        JOIN exercises e ON w.exercise_id = e.id
+        WHERE w.user_id = ?
+    """
+    params = [user_id]
+    if period:
+        if period == 'day':
+            query += " AND DATE(w.performed_at) = DATE('now')"
+        elif period == 'week':
+            query += " AND strftime('%W', w.performed_at) = strftime('%W', 'now') AND strftime('%Y', w.performed_at) = strftime('%Y', 'now')"
+        elif period == 'month':
+            query += " AND strftime('%m', w.performed_at) = strftime('%m', 'now') AND strftime('%Y', w.performed_at) = strftime('%Y', 'now')"
+    cur.execute(query, params)
+    result = cur.fetchone()
+    conn.close()
+    return result  # (total_points, total_workouts)
+
+def get_leaderboard(period=None, limit=10):
+    """
+    Возвращает топ пользователей по сумме баллов за указанный период.
+    """
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    query = """
+        SELECT u.user_id, u.first_name, u.username, SUM(e.points) as total
+        FROM workouts w
+        JOIN users u ON w.user_id = u.user_id
+        JOIN exercises e ON w.exercise_id = e.id
+        WHERE 1=1
+    """
+    params = []
+    if period:
+        if period == 'day':
+            query += " AND DATE(w.performed_at) = DATE('now')"
+        elif period == 'week':
+            query += " AND strftime('%W', w.performed_at) = strftime('%W', 'now') AND strftime('%Y', w.performed_at) = strftime('%Y', 'now')"
+        elif period == 'month':
+            query += " AND strftime('%m', w.performed_at) = strftime('%m', 'now') AND strftime('%Y', w.performed_at) = strftime('%Y', 'now')"
+    query += " GROUP BY u.user_id ORDER BY total DESC LIMIT ?"
+    params.append(limit)
+    cur.execute(query, params)
+    results = cur.fetchall()
+    conn.close()
+    return results
