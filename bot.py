@@ -2,13 +2,12 @@ import os
 import logging
 import asyncio
 import re
+import json
 import shlex
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
 from datetime import datetime
-
-
 
 # === ИМПОРТЫ ДЛЯ ТЕЛЕГРАМА И КНОПОК ===
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -28,7 +27,8 @@ from photo_processor import (
 # === ИМПОРТЫ ДЛЯ БАЗЫ ДАННЫХ И ТРЕНИРОВОК ===
 from database import (
     init_db, add_user, get_exercises, add_workout, add_exercise,
-    set_exercise_week, get_user_stats, get_leaderboard
+    set_exercise_week, get_user_stats, get_leaderboard,
+    get_all_exercises, delete_exercise
 )
 from workout_handlers import (
     workout_start, exercise_choice, result_input, video_input,
@@ -140,7 +140,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔹 `/wod` - Записать тренировку\n"
         "🔹 `/mystats [day|week|month]` - Моя статистика\n"
         "🔹 `/top [day|week|month]` - Таблица лидеров\n"
-        "🔹 `/setweek <id> <неделя>` - Установить неделю для упражнения (админ)\n\n"
+        "🔹 `/listexercises` - Список упражнений (админ)\n"
+        "🔹 `/delexercise <id>` - Удалить упражнение (админ)\n"
+        "🔹 `/load_exercises` - Загрузить из JSON (админ)\n\n"
         "Просто отправь текст, чтобы спросить ИИ, или фото (после выбора стиля в /menu)."
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
@@ -246,7 +248,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ========== АДМИН-КОМАНДЫ ДЛЯ УПРАЖНЕНИЙ ==========
 async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Добавляет упражнение с поддержкой кавычек (автор: Максим и его команда)."""
+    """Добавляет упражнение с поддержкой кавычек (исправленная версия)."""
     if not is_admin(update):
         await update.message.reply_text("⛔ Нет прав.")
         return
@@ -278,12 +280,10 @@ async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
     try:
         if len(args) == 5:
-            # Есть неделя
             week = int(args[-1])
             points = int(args[-2])
             description = " ".join(args[2:-2])
         elif len(args) == 4:
-            # Нет недели
             week = 0
             points = int(args[-1])
             description = " ".join(args[2:-1])
@@ -300,21 +300,59 @@ async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYP
     else:
         await update.message.reply_text(f"❌ Упражнение с таким именем уже существует.")
 
-async def set_week_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def delete_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
         await update.message.reply_text("⛔ Нет прав.")
         return
-    if len(context.args) != 2:
-        await update.message.reply_text("Использование: /setweek <id упражнения> <неделя>")
+    if len(context.args) != 1:
+        await update.message.reply_text("Использование: /delexercise <id_упражнения>")
         return
     try:
         ex_id = int(context.args[0])
-        week = int(context.args[1])
     except ValueError:
-        await update.message.reply_text("❌ ID и неделя должны быть числами.")
+        await update.message.reply_text("❌ ID должен быть числом.")
         return
-    set_exercise_week(ex_id, week)
-    await update.message.reply_text(f"✅ Для упражнения с ID {ex_id} установлена неделя {week}.")
+    if delete_exercise(ex_id):
+        await update.message.reply_text(f"✅ Упражнение с ID {ex_id} удалено.")
+    else:
+        await update.message.reply_text(f"❌ Упражнение с ID {ex_id} не найдено.")
+
+async def list_exercises_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await update.message.reply_text("⛔ Нет прав.")
+        return
+    exercises = get_all_exercises()
+    if not exercises:
+        await update.message.reply_text("Список упражнений пуст.")
+        return
+    text = "📋 **Список упражнений:**\n\n"
+    for ex in exercises:
+        ex_id, name, metric, points, week = ex
+        week_text = f" (неделя {week})" if week != 0 else ""
+        text += f"🔹 ID: {ex_id} — {name} — {points} баллов{week_text}\n"
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def load_exercises_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await update.message.reply_text("⛔ Нет прав.")
+        return
+    try:
+        with open('exercises.json', 'r', encoding='utf-8') as f:
+            exercises = json.load(f)
+    except FileNotFoundError:
+        await update.message.reply_text("❌ Файл exercises.json не найден.")
+        return
+    except json.JSONDecodeError:
+        await update.message.reply_text("❌ Ошибка в JSON-файле.")
+        return
+    added = 0
+    skipped = 0
+    for ex in exercises:
+        if add_exercise(ex['name'], ex['description'], ex['metric'], ex.get('points', 0), ex.get('week', 0)):
+            added += 1
+        else:
+            skipped += 1
+    await update.message.reply_text(f"✅ Загружено: {added} упражнений, пропущено (уже есть): {skipped}.")
 
 # ========== СТАТИСТИКА ==========
 async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -362,7 +400,9 @@ def main():
     app.add_handler(CommandHandler("reset", reset_command))
     app.add_handler(CommandHandler("config", config_command))
     app.add_handler(CommandHandler("addexercise", add_exercise_command))
-    app.add_handler(CommandHandler("setweek", set_week_command))
+    app.add_handler(CommandHandler("delexercise", delete_exercise_command))
+    app.add_handler(CommandHandler("listexercises", list_exercises_command))
+    app.add_handler(CommandHandler("load_exercises", load_exercises_command))
     app.add_handler(CommandHandler("mystats", mystats_command))
     app.add_handler(CommandHandler("top", top_command))
 
@@ -379,7 +419,7 @@ def main():
     app.add_handler(workout_conv)
 
     # --- Обработчики колбэков ---
-    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
 
     # --- Обработчики сообщений ---
