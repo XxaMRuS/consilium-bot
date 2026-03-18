@@ -246,13 +246,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ========== АДМИН-КОМАНДЫ ДЛЯ УПРАЖНЕНИЙ ==========
 async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Добавляет упражнение с поддержкой кавычек в названии и описании."""
+    """Добавляет упражнение с поддержкой кавычек (автор: Максим и его команда)."""
     if not is_admin(update):
-        logger.info(f"DEBUG add_exercise_command: полный текст = {update.message.text}")
         await update.message.reply_text("⛔ Нет прав.")
         return
 
-    # Получаем полный текст команды и удаляем саму команду
     full_text = update.message.text
     if ' ' not in full_text:
         await update.message.reply_text(
@@ -261,7 +259,7 @@ async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return
 
-    args_part = full_text.split(maxsplit=1)[1]  # всё после команды
+    args_part = full_text.split(maxsplit=1)[1]
     try:
         args = shlex.split(args_part)
     except ValueError as e:
@@ -279,16 +277,19 @@ async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     try:
-        # Определяем, есть ли неделя (последний аргумент может быть числом)
-        last = args[-1]
-        if last.isdigit():
-            week = int(last)
+        if len(args) == 5:
+            # Есть неделя
+            week = int(args[-1])
             points = int(args[-2])
-            description = " ".join(args[2:-2])  # описание между типом и баллами
-        else:
+            description = " ".join(args[2:-2])
+        elif len(args) == 4:
+            # Нет недели
             week = 0
-            points = int(last)
+            points = int(args[-1])
             description = " ".join(args[2:-1])
+        else:
+            await update.message.reply_text("❌ Неправильное количество аргументов.")
+            return
     except ValueError:
         await update.message.reply_text("❌ Баллы должны быть числом.")
         return
