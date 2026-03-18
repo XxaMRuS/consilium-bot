@@ -7,11 +7,15 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
 
 # === ИНИЦИАЛИЗАЦИЯ ASYNCIO ===
-try:
-    loop = asyncio.get_event_loop()
-except RuntimeError:
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+def get_or_create_eventloop():
+    try:
+        return asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        return loop
+
+loop = get_or_create_eventloop()
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
@@ -33,10 +37,13 @@ logger = logging.getLogger(__name__)
 
 # === ТОКЕН БОТА ===
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_USER_ID", 0))
+
+def is_admin(update: Update) -> bool:
+    return update.effective_user.id == ADMIN_ID
 
 # === УТИЛИТЫ ===
 def clean_markdown(text):
-    """Удаляет из текста MarkDown-символы."""
     text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
     text = re.sub(r'\*(.*?)\*', r'\1', text)
     text = re.sub(r'__(.*?)__', r'\1', text)
@@ -49,7 +56,6 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")
-
     def log_message(self, format, *args):
         pass
 
@@ -59,7 +65,6 @@ def run_http_server():
     logger.info(f"HTTP-сервер запущен на порту {port}")
     server.serve_forever()
 
-# Запускаем сервер в отдельном потоке
 Thread(target=run_http_server, daemon=True).start()
 
 # === ОБРАБОТЧИКИ КОМАНД ===
@@ -74,7 +79,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Отправляет сообщение с кнопками для выбора стиля."""
     keyboard = [
         [InlineKeyboardButton("✏️ Карандаш", callback_data='sketch'),
          InlineKeyboardButton("🎌 Аниме", callback_data='anime')],
@@ -114,6 +118,43 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
+# === КОНФИГУРАЦИЯ (ТОЛЬКО ДЛЯ АДМИНА) ===
+async def config_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await update.message.reply_text("⛔ У вас нет прав.")
+        return
+    keyboard = []
+    for provider, enabled in ENABLED_PROVIDERS.items():
+        status = "✅ ВКЛ" if enabled else "❌ ВЫКЛ"
+        keyboard.append([InlineKeyboardButton(f"{provider} {status}", callback_data=f"toggle_{provider}")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "⚙️ **Настройки консилиума**\nНажми на кнопку, чтобы включить/выключить:",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+async def config_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.from_user.id != ADMIN_ID:
+        await query.edit_message_text("⛔ Недоступно.")
+        return
+    if query.data.startswith("toggle_"):
+        provider = query.data.replace("toggle_", "")
+        if provider in ENABLED_PROVIDERS:
+            ENABLED_PROVIDERS[provider] = not ENABLED_PROVIDERS[provider]
+            keyboard = []
+            for p, enabled in ENABLED_PROVIDERS.items():
+                status = "✅ ВКЛ" if enabled else "❌ ВЫКЛ"
+                keyboard.append([InlineKeyboardButton(f"{p} {status}", callback_data=f"toggle_{p}")])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                "⚙️ **Настройки консилиума**\nНажми на кнопку, чтобы включить/выключить:",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+
 # === ОБРАБОТКА ТЕКСТА И ФОТО ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_question = update.message.text
@@ -130,32 +171,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("Ошибка в handle_message")
         await update.message.reply_text("❌ Ошибка при ответе ИИ.")
 
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    context.user_data['effect'] = query.data
-    
-    styles = {
-        'sketch': 'карандаш', 'anime': 'аниме', 'sepia': 'сепия',
-        'hardrock': 'хард-рок', 'pixel': 'пиксель', 'neon': 'неон',
-        'oil': 'масло', 'watercolor': 'акварель', 'cartoon': 'мультяшный'
-    }
-    name = styles.get(query.data, query.data)
-    await query.edit_message_text(f"✅ Выбран стиль: {name}. Теперь отправляй фото!")
-
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'effect' not in context.user_data:
         await update.message.reply_text("Сначала выбери стиль через /menu")
         return
-
     effect = context.user_data['effect']
     photo_file = await update.message.photo[-1].get_file()
     photo_bytes = await photo_file.download_as_bytearray()
-
     try:
         await update.message.reply_text("⏳ Обрабатываю фото...")
-        
-        # Словарь функций для вызова
         processors = {
             'sketch': convert_to_sketch,
             'anime': convert_to_anime,
@@ -167,23 +191,31 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'watercolor': convert_to_watercolor,
             'cartoon': convert_to_cartoon
         }
-        
         if effect in processors:
             output = processors[effect](photo_bytes)
             await update.message.reply_photo(photo=output, caption=f"Готово! Стиль: {effect}")
         else:
             await update.message.reply_text("Неизвестный эффект.")
-            
     except Exception as e:
         logger.exception("Ошибка в handle_photo")
         await update.message.reply_text("❌ Не удалось обработать фото.")
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data['effect'] = query.data
+    styles = {
+        'sketch': 'карандаш', 'anime': 'аниме', 'sepia': 'сепия',
+        'hardrock': 'хард-рок', 'pixel': 'пиксель', 'neon': 'неон',
+        'oil': 'масло', 'watercolor': 'акварель', 'cartoon': 'мультяшный'
+    }
+    name = styles.get(query.data, query.data)
+    await query.edit_message_text(f"✅ Выбран стиль: {name}. Теперь отправляй фото!")
 
 # === ЗАПУСК ===
 def main():
     if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
-
-    # Создаём цикл событий asyncio (обязательно для Python 3.14+)
     try:
         asyncio.get_event_loop()
     except RuntimeError:
@@ -191,14 +223,13 @@ def main():
         asyncio.set_event_loop(loop)
 
     app = Application.builder().token(TOKEN).build()
-
-    # Регистрация обработчиков
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", show_menu))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("reset", reset_command))
-    
+    app.add_handler(CommandHandler("config", config_command))
+    app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -207,12 +238,8 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
-    main()
-
-if __name__ == "__main__":
     try:
         main()
     except Exception as e:
         logger.exception("💥 Критическая ошибка в main: %s", e)
-        # Принудительно завершаем процесс, чтобы Render перезапустил бота
         raise
