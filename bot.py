@@ -249,26 +249,30 @@ async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYP
     if len(context.args) < 4:
         await update.message.reply_text(
             "Использование: /addexercise <название> <reps|time> <описание> <баллы> [неделя]\n"
-            "Пример: /addexercise Приседания reps 'Приседания со штангой' 10 15"
+            "Пример: /addexercise Приседания reps \"Приседания со штангой\" 10 15"
         )
         return
     name = context.args[0]
     metric = context.args[1]
+    if metric not in ('reps', 'time'):
+        await update.message.reply_text("❌ Тип упражнения должен быть 'reps' или 'time'.")
+        return
     try:
-        points = int(context.args[-2])
+        if len(context.args) >= 5:
+            points = int(context.args[-2])
+            week = int(context.args[-1])
+            description = " ".join(context.args[2:-2])
+        else:
+            points = int(context.args[-1])
+            week = 0
+            description = " ".join(context.args[2:-1])
     except ValueError:
         await update.message.reply_text("❌ Баллы должны быть числом.")
         return
-    week = 0
-    if len(context.args) > 4:
-        try:
-            week = int(context.args[-1])
-        except ValueError:
-            await update.message.reply_text("❌ Неделя должна быть числом.")
-            return
-    description = " ".join(context.args[2:-2]) if len(context.args) > 4 else " ".join(context.args[2:-1])
+
     if add_exercise(name, description, metric, points, week):
-        await update.message.reply_text(f"✅ Упражнение '{name}' добавлено (баллы: {points}, неделя: {week}).")
+        week_text = f", неделя: {week}" if week != 0 else ""
+        await update.message.reply_text(f"✅ Упражнение '{name}' добавлено (баллы: {points}{week_text}).")
     else:
         await update.message.reply_text(f"❌ Упражнение с таким именем уже существует.")
 
