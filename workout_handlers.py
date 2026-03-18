@@ -87,7 +87,7 @@ async def video_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     add_workout(user_id, exercise_id, result_value, video_link)
     await update.message.reply_text(
         "✅ Тренировка успешно записана! Спасибо за честность.\n"
-        "Можешь посмотреть результаты командой /stats (скоро добавим)."
+        "Можешь посмотреть свои результаты командой /mystats, а таблицу лидеров — /top."
     )
     context.user_data.clear()
     return ConversationHandler.END
