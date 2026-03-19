@@ -273,6 +273,7 @@ async def sport_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def sport_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    await query.message.reply_text("DEBUG: callback received")
     data = query.data
     logger.info(f"sport_callback_handler called with data = {data}")  # лог вместо print
 
