@@ -8,14 +8,14 @@ from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
 from datetime import datetime
-from database import get_user_workouts
-from datetime import datetime
 
-# === ИМПОРТЫ ДЛЯ ТЕЛЕГРАМА И КНОПОК ===
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
-    filters, ContextTypes, ConversationHandler
+# Импорты из database
+from database import (
+    init_db, add_user, get_exercises, add_workout, add_exercise,
+    set_exercise_week, get_user_stats, get_leaderboard,
+    get_all_exercises, delete_exercise,
+    get_user_level, set_user_level,
+    get_user_workouts  # добавили сюда
 )
 
 # === ТВОИ ЛОКАЛЬНЫЕ МОДУЛИ ===
