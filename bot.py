@@ -8,6 +8,7 @@ from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
 from datetime import datetime
+from telegram import ReplyKeyboardMarkup, KeyboardButton
 
 # === ИМПОРТЫ ДЛЯ ТЕЛЕГРАМА И КНОПОК ===
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -89,28 +90,19 @@ logger.info("База данных готова к работе.")
 
 # ========== ОСНОВНЫЕ ОБРАБОТЧИКИ КОМАНД ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Главное меню с кнопками."""
+    # Создаём клавиатуру
+    keyboard = [
+        ["🏋️ Спорт", "📸 Фото"],
+        ["🤖 Задать вопрос", "📊 Моя статистика"],
+        ["🏆 Рейтинг", "⚙️ Админ"],
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
     await update.message.reply_text(
-        "🔥 Привет! Я твой персональный фитнес-помощник и AI-консилиум в одном боте.\n"
-        "Мне можно задавать любые вопросы, и мы с другими AI совещаемся, "
-        "чтобы дать тебе самый лучший ответ. Поэтому иногда я могу думать чуть дольше! 😉\n\n"
-        "📸 **Фотоэффекты:**\n"
-        "/menu — выбери стиль и отправь фото\n\n"
-        "💪 **Тренировки:**\n"
-        "/wod — записать выполненную тренировку\n"
-        "/catalog — посмотреть все упражнения (сейчас, было, будет)\n"
-        "/mystats — моя статистика (баллы, тренировки)\n"
-        "/top — таблица лидеров\n"
-        "/setlevel — сменить уровень (новичок/профи)\n\n"
-        "🤖 **Общение с AI:**\n"
-        "Просто напиши любой вопрос — отвечу как консилиум.\n"
-        "/reset — очистить историю диалога\n\n"
-        "⚙️ **Для админа:**\n"
-        "/config — настройка AI\n"
-        "/listexercises — список упражнений с ID\n"
-        "/addexercise — добавить упражнение\n"
-        "/delexercise — удалить упражнение\n"
-        "/load_exercises — загрузить из JSON\n\n"
-        "Погнали! 👊"
+        "🔥 Привет! Я твой фитнес-помощник и AI-консилиум.\n"
+        "Выбери, что хочешь сделать:",
+        reply_markup=reply_markup
     )
 
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -565,6 +557,11 @@ def main():
     # --- Обработчики колбэков ---
     app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
+
+    # --- Обработчики сообщений ---
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))  # ← сначала проверяем меню
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))  # потом всё остальное
 
     # --- Обработчики сообщений ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
