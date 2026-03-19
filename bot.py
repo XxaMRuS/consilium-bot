@@ -269,11 +269,6 @@ async def sport_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🏋️ Раздел «Спорт». Выбери действие:",
         reply_markup=reply_markup
     )
-    else:
-        await update.message.reply_text(
-            "🏋️ Раздел «Спорт». Выбери действие:",
-            reply_markup=reply_markup
-        )
 
 async def sport_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
