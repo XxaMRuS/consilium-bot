@@ -255,40 +255,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("Ошибка в handle_photo")
         await update.message.reply_text("❌ Не удалось обработать фото.")
 
-# ========== МЕНЮ И КНОПКИ ==========
-
-async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обрабатывает нажатия на кнопки главного меню (Reply-клавиатура)."""
-    text = update.message.text
-    if text == "🏋️ Спорт":
-        await sport_menu(update, context)
-    elif text == "📸 Фото":
-        await show_menu(update, context)  # используем существующую команду /menu
-    elif text == "🤖 Задать вопрос":
-        await update.message.reply_text("Напиши свой вопрос — я отвечу.")
-    elif text == "📊 Моя статистика":
-        await mystats_command(update, context)
-    elif text == "🏆 Рейтинг":
-        await top_command(update, context)
-    elif text == "⚙️ Админ":
-        if is_admin(update):
-            await update.message.reply_text(
-                "Админ-панель:\n"
-                "/config — настройки AI\n"
-                "/addexercise — добавить упражнение\n"
-                "/listexercises — список упражнений\n"
-                "/load_exercises — загрузить из JSON\n"
-                "/delexercise — удалить упражнение"
-            )
-        else:
-            await update.message.reply_text("⛔ У вас нет прав на это.")
-    else:
-        # Если текст не совпал ни с одной кнопкой, передаём обычному обработчику сообщений
-        await handle_message(update, context)
-
 async def sport_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("DEBUG: sport_menu opened")
-    """Показывает подменю раздела Спорт с inline-кнопками."""
+    await update.message.reply_text("DEBUG: sport_menu opened")  # отладку потом уберёшь
     keyboard = [
         [InlineKeyboardButton("📋 Каталог упражнений", callback_data='sport_catalog')],
         [InlineKeyboardButton("✍️ Записать тренировку", callback_data='sport_wod')],
@@ -297,13 +265,10 @@ async def sport_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("◀️ Назад", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Выбери действие:", reply_markup=reply_markup)
-    # Если функция вызвана из callback-запроса, используем edit_message_text, иначе reply_text
-    if update.callback_query:
-        await update.callback_query.edit_message_text(
-            "🏋️ Раздел «Спорт». Выбери действие:",
-            reply_markup=reply_markup
-        )
+    await update.message.reply_text(
+        "🏋️ Раздел «Спорт». Выбери действие:",
+        reply_markup=reply_markup
+    )
     else:
         await update.message.reply_text(
             "🏋️ Раздел «Спорт». Выбери действие:",
@@ -314,29 +279,29 @@ async def sport_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     await query.answer()
     data = query.data
-    print(f"DEBUG: sport_callback_handler called with data = {data}")
-    # или если хочешь в Telegram:
-    # await query.message.reply_text(f"DEBUG: {data}")
+    logger.info(f"sport_callback_handler called with data = {data}")  # лог вместо print
 
-    if data == 'sport_catalog':
-        await query.message.reply_text("Вот каталог упражнений (используй команду /catalog):")
-    elif data == 'sport_wod':
-        await query.message.reply_text("Отправь команду /wod, чтобы записать тренировку.")
-    elif data == 'sport_mystats':
-        # Вызов команды mystats (нужно проверить, работает ли)
-        await mystats_command(update, context)
-    elif data == 'sport_setlevel':
-        await query.message.reply_text("Чтобы сменить уровень, используй /setlevel beginner или /setlevel pro.")
-    elif data == 'back_to_main':
-        # Возврат в главное меню (Reply-клавиатура)
-        keyboard = [
-            ["🏋️ Спорт", "📸 Фото"],
-            ["🤖 Задать вопрос", "📊 Моя статистика"],
-            ["🏆 Рейтинг", "⚙️ Админ"],
-        ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-        await query.message.reply_text("Главное меню:", reply_markup=reply_markup)
-        await query.message.delete()
+    try:
+        if data == 'sport_catalog':
+            await query.message.reply_text("Вот каталог упражнений (используй команду /catalog):")
+        elif data == 'sport_wod':
+            await query.message.reply_text("Отправь команду /wod, чтобы записать тренировку.")
+        elif data == 'sport_mystats':
+            await query.message.reply_text("Твоя статистика (используй команду /mystats):")
+        elif data == 'sport_setlevel':
+            await query.message.reply_text("Чтобы сменить уровень, используй /setlevel beginner или /setlevel pro.")
+        elif data == 'back_to_main':
+            keyboard = [
+                ["🏋️ Спорт", "📸 Фото"],
+                ["🤖 Задать вопрос", "📊 Моя статистика"],
+                ["🏆 Рейтинг", "⚙️ Админ"],
+            ]
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            await query.message.reply_text("Главное меню:", reply_markup=reply_markup)
+            await query.message.delete()
+    except Exception as e:
+        logger.exception(f"Ошибка в sport_callback_handler: {e}")
+        await query.message.reply_text("❌ Произошла ошибка. Попробуй позже.")
 
 async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обрабатывает нажатия на кнопки главного меню."""
@@ -662,13 +627,13 @@ def main():
     # --- Обработчики колбэков ---
     app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
+    app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
 
     # --- Обработчики сообщений ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))  # ← сначала проверяем меню
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))  # потом всё остальное
-    app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
-
+    
     logger.info("🚀 Бот запущен...")
     app.run_polling(drop_pending_updates=True)
 
