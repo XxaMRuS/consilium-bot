@@ -8,6 +8,8 @@ from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
 from datetime import datetime
+from database import get_user_workouts
+from datetime import datetime
 
 # === ИМПОРТЫ ДЛЯ ТЕЛЕГРАМА И КНОПОК ===
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -305,6 +307,32 @@ async def catalog_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text, parse_mode='Markdown')
 
+async def myhistory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает последние тренировки пользователя."""
+    user_id = update.effective_user.id
+    limit = 20
+    if context.args and context.args[0].isdigit():
+        limit = int(context.args[0])
+        if limit > 50:
+            limit = 50
+
+    workouts = get_user_workouts(user_id, limit)
+    if not workouts:
+        await update.message.reply_text("У тебя пока нет записанных тренировок.")
+        return
+
+    text = f"📋 **Твои последние {len(workouts)} тренировок:**\n\n"
+    for w in workouts:
+        wid, name, result, video, date, is_best, typ = w
+        date_str = datetime.fromisoformat(date).strftime("%d.%m.%Y %H:%M")
+        best_mark = " 🏆" if is_best else ""
+        text += f"• {date_str} — **{name}** ({typ}): {result} [ссылка]({video}){best_mark}\n"
+        if len(text) > 3500:  # Telegram лимит 4096, оставим запас
+            text += "\n...и ещё"
+            break
+
+    await update.message.reply_text(text, parse_mode='Markdown', disable_web_page_preview=True)
+
 # ========== АДМИН-КОМАНДЫ ДЛЯ УПРАЖНЕНИЙ ==========
 async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
@@ -521,6 +549,7 @@ def main():
     app.add_handler(CommandHandler("top", top_command))
     app.add_handler(CommandHandler("setlevel", setlevel_command))
     app.add_handler(CommandHandler("catalog", catalog_command))  # новая команда
+    app.add_handler(CommandHandler("myhistory", myhistory_command))
 
     # --- ДИАЛОГ ТРЕНИРОВОК ---
     workout_conv = ConversationHandler(
