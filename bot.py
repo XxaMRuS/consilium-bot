@@ -620,6 +620,13 @@ def main():
     )
     app.add_handler(workout_conv)
 
+async def debug_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text(f"DEBUG: {query.data}")
+
+app.add_handler(CallbackQueryHandler(debug_all))
+
     # --- Обработчики колбэков ---
     app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
