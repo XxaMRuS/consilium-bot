@@ -14,26 +14,24 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
 
-    # Таблица пользователей (добавлен уровень)
+    # Таблица пользователей
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
             first_name TEXT,
             last_name TEXT,
             username TEXT,
-            level TEXT DEFAULT 'beginner',  -- beginner / pro
+            level TEXT DEFAULT 'beginner',
             registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-
-    # Проверяем наличие колонки level
     cur.execute("PRAGMA table_info(users)")
     columns = [col[1] for col in cur.fetchall()]
     if 'level' not in columns:
         cur.execute("ALTER TABLE users ADD COLUMN level TEXT DEFAULT 'beginner'")
         logger.info("Колонка 'level' добавлена в users.")
 
-    # Таблица упражнений (добавлен уровень сложности)
+    # Таблица упражнений
     cur.execute("""
         CREATE TABLE IF NOT EXISTS exercises (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,11 +40,10 @@ def init_db():
             metric TEXT NOT NULL,
             points INTEGER DEFAULT 0,
             week INTEGER DEFAULT 0,
-            difficulty TEXT DEFAULT 'beginner',  -- beginner / pro
+            difficulty TEXT DEFAULT 'beginner',
             is_active BOOLEAN DEFAULT 1
         )
     """)
-
     cur.execute("PRAGMA table_info(exercises)")
     columns = [col[1] for col in cur.fetchall()]
     if 'points' not in columns:
@@ -59,7 +56,7 @@ def init_db():
         cur.execute("ALTER TABLE exercises ADD COLUMN difficulty TEXT DEFAULT 'beginner'")
         logger.info("Колонка 'difficulty' добавлена в exercises.")
 
-    # Таблица результатов тренировок (добавлен уровень пользователя на момент тренировки)
+    # Таблица результатов тренировок
     cur.execute("""
         CREATE TABLE IF NOT EXISTS workouts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,13 +64,12 @@ def init_db():
             exercise_id INTEGER NOT NULL,
             result_value TEXT NOT NULL,
             video_link TEXT NOT NULL,
-            user_level TEXT NOT NULL,  -- уровень на момент тренировки
+            user_level TEXT NOT NULL,
             performed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(user_id),
             FOREIGN KEY(exercise_id) REFERENCES exercises(id)
         )
     """)
-
     cur.execute("PRAGMA table_info(workouts)")
     columns = [col[1] for col in cur.fetchall()]
     if 'user_level' not in columns:
@@ -148,10 +144,6 @@ def set_user_level(user_id, new_level):
     return True
 
 def get_exercises(active_only=True, week=None, difficulty=None):
-    """
-    Возвращает список упражнений (id, name, metric, points, week, difficulty).
-    Можно фильтровать по difficulty.
-    """
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     query = "SELECT id, name, metric, points, week, difficulty FROM exercises"
@@ -173,6 +165,7 @@ def get_exercises(active_only=True, week=None, difficulty=None):
     return exercises
 
 def get_all_exercises():
+    """Возвращает все упражнения (id, name, metric, points, week, difficulty) для каталога."""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute("SELECT id, name, metric, points, week, difficulty FROM exercises ORDER BY name")
@@ -222,11 +215,6 @@ def set_exercise_week(exercise_id, week):
     conn.close()
 
 def get_user_stats(user_id, period=None, level=None):
-    """
-    Возвращает (total_points, total_workouts) для пользователя.
-    Если level указан, учитываются только тренировки с этим уровнем.
-    period может быть 'day','week','month','year'.
-    """
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     query = """
@@ -251,14 +239,9 @@ def get_user_stats(user_id, period=None, level=None):
     cur.execute(query, params)
     result = cur.fetchone()
     conn.close()
-    return result  # (total_points, total_workouts)
+    return result
 
 def get_leaderboard(period=None, level=None, limit=10):
-    """
-    Возвращает топ пользователей по сумме баллов.
-    Если level указан, учитываются только тренировки этого уровня.
-    period может быть 'day','week','month','year'.
-    """
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     query = """
