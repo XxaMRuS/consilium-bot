@@ -33,7 +33,7 @@ from database import (
 )
 from workout_handlers import (
     workout_start, exercise_choice, result_input, video_input,
-    workout_cancel, EXERCISE, RESULT, VIDEO
+    workout_cancel, EXERCISE, RESULT, VIDEO, get_current_week  # добавили get_current_week
 )
 
 # === НАСТРОЙКА ЛОГИРОВАНИЯ ===
@@ -88,7 +88,6 @@ logger.info("База данных готова к работе.")
 
 # ========== ОСНОВНЫЕ ОБРАБОТЧИКИ КОМАНД ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # При первом запуске можно добавить проверку уровня, но пользователь добавится при первой тренировке
     await update.message.reply_text(
         "🔥 Привет! Я твой персональный фитнес-помощник и AI-консилиум в одном боте.\n"
         "Мне можно задавать любые вопросы, и мы с другими AI совещаемся, "
@@ -97,6 +96,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/menu — выбери стиль и отправь фото\n\n"
         "💪 **Тренировки:**\n"
         "/wod — записать выполненную тренировку\n"
+        "/catalog — посмотреть все упражнения (сейчас, было, будет)\n"
         "/mystats — моя статистика (баллы, тренировки)\n"
         "/top — таблица лидеров\n"
         "/setlevel — сменить уровень (новичок/профи)\n\n"
@@ -105,7 +105,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/reset — очистить историю диалога\n\n"
         "⚙️ **Для админа:**\n"
         "/config — настройка AI\n"
-        "/listexercises — список упражнений\n"
+        "/listexercises — список упражнений с ID\n"
         "/addexercise — добавить упражнение\n"
         "/delexercise — удалить упражнение\n"
         "/load_exercises — загрузить из JSON\n\n"
@@ -151,6 +151,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔹 `/help` - Помощь\n"
         "🔹 `/config` - Настройки AI (только админ)\n"
         "🔹 `/wod` - Записать тренировку\n"
+        "🔹 `/catalog` - Каталог упражнений\n"
         "🔹 `/mystats [day|week|month|year]` - Моя статистика\n"
         "🔹 `/top [day|week|month|year] [beginner|pro]` - Таблица лидеров\n"
         "🔹 `/setlevel <beginner|pro>` - Сменить уровень\n"
@@ -261,9 +262,51 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("Ошибка в handle_photo")
         await update.message.reply_text("❌ Не удалось обработать фото.")
 
+# ========== КАТАЛОГ УПРАЖНЕНИЙ (НОВОЕ) ==========
+async def catalog_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает каталог упражнений с пометками о доступности."""
+    user_id = update.effective_user.id
+    current_week = get_current_week()
+    exercises = get_all_exercises()  # получаем все упражнения с деталями
+
+    if not exercises:
+        await update.message.reply_text("Список упражнений пока пуст.")
+        return
+
+    permanent = []
+    weekly = []
+    for ex in exercises:
+        if ex[4] == 0:  # week = 0
+            permanent.append(ex)
+        else:
+            weekly.append(ex)
+
+    text = "📋 **Каталог упражнений**\n\n"
+    if permanent:
+        text += "♾️ **Доступны всегда:**\n"
+        for ex in permanent:
+            name, metric, points, difficulty = ex[1], ex[2], ex[3], ex[5]
+            metric_icon = "🔢" if metric == 'reps' else "⏱️"
+            text += f"{metric_icon} {name} — {points} баллов, уровень: {difficulty}\n"
+        text += "\n"
+
+    if weekly:
+        text += "📅 **По неделям:**\n"
+        for ex in weekly:
+            name, metric, points, week, difficulty = ex[1], ex[2], ex[3], ex[4], ex[5]
+            metric_icon = "🔢" if metric == 'reps' else "⏱️"
+            if week == current_week:
+                status = "✅ доступно сейчас"
+            elif week < current_week:
+                status = "⏳ прошлая неделя"
+            else:
+                status = f"🔜 будет на неделе {week}"
+            text += f"{metric_icon} {name} — {points} баллов, уровень: {difficulty} ({status})\n"
+
+    await update.message.reply_text(text, parse_mode='Markdown')
+
 # ========== АДМИН-КОМАНДЫ ДЛЯ УПРАЖНЕНИЙ ==========
 async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Добавляет упражнение с поддержкой кавычек и уровня сложности."""
     if not is_admin(update):
         await update.message.reply_text("⛔ Нет прав.")
         return
@@ -294,23 +337,19 @@ async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("❌ Тип упражнения должен быть 'reps' или 'time'.")
         return
 
-    # Определяем баллы, неделю и уровень сложности
     try:
         if len(args) == 4:
-            # только баллы
             points = int(args[3])
             week = 0
             difficulty = 'beginner'
             description = " ".join(args[2:3])
         elif len(args) == 5:
-            # либо баллы + неделя, либо баллы + difficulty
             if args[4].isdigit():
                 week = int(args[4])
                 points = int(args[3])
                 difficulty = 'beginner'
                 description = " ".join(args[2:3])
             else:
-                # difficulty
                 if args[4] not in ('beginner', 'pro'):
                     await update.message.reply_text("❌ Уровень сложности должен быть 'beginner' или 'pro'.")
                     return
@@ -319,7 +358,6 @@ async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 difficulty = args[4]
                 description = " ".join(args[2:3])
         elif len(args) == 6:
-            # баллы + неделя + difficulty
             points = int(args[3])
             week = int(args[4])
             difficulty = args[5]
@@ -402,7 +440,6 @@ async def load_exercises_command(update: Update, context: ContextTypes.DEFAULT_T
 
 # ========== КОМАНДЫ ДЛЯ РАБОТЫ С УРОВНЕМ ПОЛЬЗОВАТЕЛЯ ==========
 async def setlevel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Изменяет уровень пользователя (beginner / pro)."""
     user_id = update.effective_user.id
     if len(context.args) != 1 or context.args[0] not in ('beginner', 'pro'):
         await update.message.reply_text(
@@ -411,7 +448,6 @@ async def setlevel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "но общий счёт сохранится."
         )
         return
-
     new_level = context.args[0]
     if set_user_level(user_id, new_level):
         await update.message.reply_text(f"✅ Твой уровень изменён на «{new_level}». Теперь твои тренировки будут учитываться в этой лиге.")
@@ -426,7 +462,6 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Неверный период. Используй: day, week, month, year")
         return
 
-    # Получаем общую статистику и статистику по текущей лиге
     total_points, total_workouts = get_user_stats(user_id, period, level=None)
     level_points, level_workouts = get_user_stats(user_id, period, level=get_user_level(user_id))
 
@@ -440,10 +475,9 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode='Markdown')
 
 async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Можно указать период и/или лигу: /top pro year, /top beginner week
     args = context.args
     period = None
-    level = get_user_level(update.effective_user.id)  # по умолчанию текущий уровень пользователя
+    level = get_user_level(update.effective_user.id)
 
     for arg in args:
         if arg in ('day', 'week', 'month', 'year'):
@@ -486,6 +520,7 @@ def main():
     app.add_handler(CommandHandler("mystats", mystats_command))
     app.add_handler(CommandHandler("top", top_command))
     app.add_handler(CommandHandler("setlevel", setlevel_command))
+    app.add_handler(CommandHandler("catalog", catalog_command))  # новая команда
 
     # --- ДИАЛОГ ТРЕНИРОВОК ---
     workout_conv = ConversationHandler(
