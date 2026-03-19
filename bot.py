@@ -9,13 +9,11 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
 from datetime import datetime
 
-# Импорты из database
-from database import (
-    init_db, add_user, get_exercises, add_workout, add_exercise,
-    set_exercise_week, get_user_stats, get_leaderboard,
-    get_all_exercises, delete_exercise,
-    get_user_level, set_user_level,
-    get_user_workouts  # добавили сюда
+# === ИМПОРТЫ ДЛЯ ТЕЛЕГРАМА И КНОПОК ===
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
+    filters, ContextTypes, ConversationHandler
 )
 
 # === ТВОИ ЛОКАЛЬНЫЕ МОДУЛИ ===
@@ -31,7 +29,8 @@ from database import (
     init_db, add_user, get_exercises, add_workout, add_exercise,
     set_exercise_week, get_user_stats, get_leaderboard,
     get_all_exercises, delete_exercise,
-    get_user_level, set_user_level
+    get_user_level, set_user_level,
+    get_user_workouts
 )
 from workout_handlers import (
     workout_start, exercise_choice, result_input, video_input,
