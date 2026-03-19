@@ -624,7 +624,7 @@ async def log_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Callback received: {update.callback_query.data}")
     # Не отправляем сообщение, просто логируем
 
-app.add_handler(CallbackQueryHandler(log_all_callbacks)
+app.add_handler(CallbackQueryHandler(log_all_callbacks))
 
     # --- Обработчики колбэков ---
     app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
