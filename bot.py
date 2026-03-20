@@ -35,7 +35,7 @@ from database import (
 )
 from workout_handlers import (
     workout_start, exercise_choice, result_input, video_input,
-    workout_cancel, EXERCISE, RESULT, VIDEO, get_current_week  # добавили get_current_week
+    workout_cancel, EXERCISE, RESULT, VIDEO, get_current_week
 )
 
 # === НАСТРОЙКА ЛОГИРОВАНИЯ ===
@@ -90,15 +90,12 @@ logger.info("База данных готова к работе.")
 
 # ========== ОСНОВНЫЕ ОБРАБОТЧИКИ КОМАНД ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Главное меню с кнопками."""
-    # Создаём клавиатуру
     keyboard = [
         ["🏋️ Спорт", "📸 Фото"],
         ["🤖 Задать вопрос", "📊 Моя статистика"],
         ["🏆 Рейтинг", "⚙️ Админ"],
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    
     await update.message.reply_text(
         "🔥 Привет! Я твой фитнес-помощник и AI-консилиум.\n"
         "Выбери, что хочешь сделать:",
@@ -255,8 +252,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("Ошибка в handle_photo")
         await update.message.reply_text("❌ Не удалось обработать фото.")
 
+# ========== СПОРТИВНОЕ МЕНЮ И КОЛБЭКИ ==========
 async def sport_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("DEBUG: sport_menu opened")  # отладку потом уберёшь
+    await update.message.reply_text("DEBUG: sport_menu opened")  # отладку можно убрать
     keyboard = [
         [InlineKeyboardButton("📋 Каталог упражнений", callback_data='sport_catalog')],
         [InlineKeyboardButton("✍️ Записать тренировку", callback_data='sport_wod')],
@@ -273,10 +271,12 @@ async def sport_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def sport_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.message.reply_text("DEBUG: callback received")
-    data = query.data
-    logger.info(f"sport_callback_handler called with data = {data}")  # лог вместо print
+    # === ОТЛАДКА: раскомментировать для проверки вызова обработчика ===
+    # await query.message.reply_text("DEBUG: callback received")
+    # logger.info(f"sport_callback_handler called with data = {query.data}")
+    # === КОНЕЦ ОТЛАДКИ ===
 
+    data = query.data
     try:
         if data == 'sport_catalog':
             await query.message.reply_text("Вот каталог упражнений (используй команду /catalog):")
@@ -305,7 +305,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "🏋️ Спорт":
         await sport_menu(update, context)
     elif text == "📸 Фото":
-        await show_menu(update, context)  # или send photo instructions
+        await show_menu(update, context)
     elif text == "🤖 Задать вопрос":
         await update.message.reply_text("Напиши свой вопрос — я отвечу.")
     elif text == "📊 Моя статистика":
@@ -318,15 +318,14 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("⛔ У вас нет прав на это.")
     else:
-        # Если не кнопка, передаём в обычный обработчик сообщений
         await handle_message(update, context)
 
-# ========== КАТАЛОГ УПРАЖНЕНИЙ (НОВОЕ) ==========
+# ========== КАТАЛОГ УПРАЖНЕНИЙ ==========
 async def catalog_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показывает каталог упражнений с пометками о доступности."""
     user_id = update.effective_user.id
     current_week = get_current_week()
-    exercises = get_all_exercises()  # получаем все упражнения с деталями
+    exercises = get_all_exercises()
 
     if not exercises:
         await update.message.reply_text("Список упражнений пока пуст.")
@@ -365,7 +364,6 @@ async def catalog_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode='Markdown')
 
 async def myhistory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает последние тренировки пользователя."""
     user_id = update.effective_user.id
     limit = 20
     if context.args and context.args[0].isdigit():
@@ -384,7 +382,7 @@ async def myhistory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         date_str = datetime.fromisoformat(date).strftime("%d.%m.%Y %H:%M")
         best_mark = " 🏆" if is_best else ""
         text += f"• {date_str} — **{name}** ({typ}): {result} [ссылка]({video}){best_mark}\n"
-        if len(text) > 3500:  # Telegram лимит 4096, оставим запас
+        if len(text) > 3500:
             text += "\n...и ещё"
             break
 
@@ -584,30 +582,22 @@ async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"{i}. {name} — {total} баллов\n"
     await update.message.reply_text(text, parse_mode='Markdown')
 
-# ========== ВСПОМОГАТЕЛЬНЫЕ ОБРАБОТЧИКИ (определяем до main) ==========
+# ========== ОТЛАДОЧНЫЕ ОБРАБОТЧИКИ (только для диагностики) ==========
+# === ОТЛАДКА: можно раскомментировать для проверки колбэков ===
+# async def test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     query = update.callback_query
+#     await query.answer()
+#     await query.message.reply_text(f"Тест: получен data = {query.data}")
+# === КОНЕЦ ОТЛАДКИ ===
 
-async def log_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Логирует все колбэки без отправки сообщений."""
-    query = update.callback_query
-    await query.answer()
-    logger.info(f"Callback received: {query.data}")
-    # Не отправляем сообщение пользователю, только логируем
-
-async def test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Тестовый обработчик для отладки кнопок."""
-    query = update.callback_query
-    await query.answer()
-    await query.message.reply_text(f"Тест: получен data = {query.data}")
-
+# ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
-    print("!!! MAIN CALLED !!!")
+    print("!!! MAIN CALLED !!!")   # временный отладочный принт
     logger.info("MAIN: started")
     if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
-    print("TOKEN OK")
     logger.info("MAIN: token ok")
     app = Application.builder().token(TOKEN).build()
-    print("APP BUILT")
     logger.info("MAIN: app built")
 
     # --- Обычные команды ---
@@ -644,20 +634,20 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
     app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
-    # Потом универсальный тестовый (для отладки) — в самом конце
-    # app.add_handler(CallbackQueryHandler(test_callback))  # закомментирован, не мешает
+    # === ОТЛАДКА: раскомментировать, если нужно проверить, приходят ли колбэки вообще ===
+    # app.add_handler(CallbackQueryHandler(test_callback))
+    # === КОНЕЦ ОТЛАДКИ ===
 
     # --- Обработчики сообщений ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("HANDLERS ADDED")
     logger.info("MAIN: handlers added")
     print("🚀 Бот запущен...")
     logger.info("🚀 Бот запущен...")
     app.run_polling(drop_pending_updates=True)
-    
+
 if __name__ == "__main__":
     try:
         main()
