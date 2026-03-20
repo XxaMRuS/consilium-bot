@@ -156,6 +156,20 @@ def load_exercises_from_json_if_empty():
     else:
         logger.info("В базе уже есть упражнения, автозагрузка пропущена.")
 
+def add_workout(user_id, exercise_id, result_value, video_link, user_level, comment=None, metric=None):
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO workouts (user_id, exercise_id, result_value, video_link, user_level, comment)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (user_id, exercise_id, result_value, video_link, user_level, comment))
+    workout_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    if metric is not None:
+        update_personal_best(user_id, exercise_id, result_value, metric)
+    return workout_id
+
 def add_user(user_id, first_name, last_name, username, level='beginner'):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
@@ -221,21 +235,6 @@ def get_exercise_by_id(exercise_id):
     row = cur.fetchone()
     conn.close()
     return row
-
-def add_workout(user_id, exercise_id, result_value, video_link, user_level, comment=None):
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    # Вставляем новую тренировку, is_best пока 0
-    cur.execute("""
-        INSERT INTO workouts (user_id, exercise_id, result_value, video_link, user_level, comment)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (user_id, exercise_id, result_value, video_link, user_level, comment))
-    workout_id = cur.lastrowid
-    conn.commit()
-    conn.close()
-    # Обновляем личные рекорды
-    update_personal_best(user_id, exercise_id, result_value, metric_type)
-    return workout_id
 
 def update_personal_best(user_id, exercise_id, new_result, metric_type):
     """Проверяет, является ли новый результат лучшим, и обновляет is_best."""
