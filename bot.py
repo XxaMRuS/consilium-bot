@@ -603,14 +603,16 @@ async def test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     logger.info("MAIN: started")
     if not TOKEN:
+        raise ValueError("Забыли T# ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
+def main():
+    logger.info("MAIN: started")
+    if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
     logger.info("MAIN: token ok")
-
-    # Создаём приложение ОДИН раз
     app = Application.builder().token(TOKEN).build()
     logger.info("MAIN: app built")
 
-    # --- 1. Обычные команды ---
+    # --- Обычные команды ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", show_menu))
     app.add_handler(CommandHandler("help", help_command))
@@ -627,7 +629,7 @@ def main():
     app.add_handler(CommandHandler("catalog", catalog_command))
     app.add_handler(CommandHandler("myhistory", myhistory_command))
 
-    # --- 2. Диалог тренировок (ConversationHandler) ---
+    # --- ДИАЛОГ ТРЕНИРОВОК ---
     workout_conv = ConversationHandler(
         entry_points=[CommandHandler('wod', workout_start)],
         states={
@@ -639,12 +641,12 @@ def main():
     )
     app.add_handler(workout_conv)
 
-    # --- # --- Обработчики колбэков ---
+    # --- Обработчики колбэков (порядок важен!) ---
     # Сначала обработчики с конкретными pattern
     app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
     app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
-    # Потом универсальный тестовый (ловит всё, что не подошло выше)
+    # Потом универсальный тестовый (для отладки) — в самом конце
     app.add_handler(CallbackQueryHandler(test_callback))
 
     # --- Обработчики сообщений ---
@@ -652,10 +654,9 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # --- 5. Запуск ---
     logger.info("🚀 Бот запущен...")
     app.run_polling(drop_pending_updates=True)
-
+    
 if __name__ == "__main__":
     try:
         main()
