@@ -623,7 +623,8 @@ def main():
             EXERCISE: [CallbackQueryHandler(exercise_choice, pattern='^ex_|^cancel$')],
             RESULT: [MessageHandler(filters.TEXT & ~filters.COMMAND, result_input)],
             VIDEO: [MessageHandler(filters.TEXT & ~filters.COMMAND, video_input)],
-            COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, comment_input)],
+            COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, comment_input),
+                      CommandHandler('skip', lambda u,c: comment_skip(u,c))],
         },
         fallbacks=[CommandHandler('cancel', workout_cancel)],
     )
