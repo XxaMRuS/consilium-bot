@@ -10,7 +10,6 @@ DB_NAME = "workouts.db"
 EXERCISES_JSON = "exercises.json"
 
 def init_db():
-    """Создаёт таблицы и добавляет недостающие колонки."""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
 
@@ -86,7 +85,7 @@ def init_db():
     """)
     logger.info("Таблица 'complex_exercises' создана.")
 
-    # Таблица результатов тренировок (добавляем колонки complex_id и is_best)
+    # Таблица результатов тренировок (добавляем колонки complex_id, is_best, comment)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS workouts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,6 +96,7 @@ def init_db():
             video_link TEXT NOT NULL,
             user_level TEXT NOT NULL,
             is_best BOOLEAN DEFAULT 0,
+            comment TEXT,
             performed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(user_id),
             FOREIGN KEY(exercise_id) REFERENCES exercises(id),
@@ -114,12 +114,14 @@ def init_db():
     if 'is_best' not in columns:
         cur.execute("ALTER TABLE workouts ADD COLUMN is_best BOOLEAN DEFAULT 0")
         logger.info("Колонка 'is_best' добавлена в workouts.")
+    if 'comment' not in columns:
+        cur.execute("ALTER TABLE workouts ADD COLUMN comment TEXT")
+        logger.info("Колонка 'comment' добавлена в workouts.")
 
     conn.commit()
     conn.close()
-    logger.info("База данных инициализирована (с поддержкой комплексов и рекордов).")
+    logger.info("База данных инициализирована (с поддержкой комплексов, рекордов и комментариев).")
 
-    # Автозагрузка упражнений из JSON, если база пуста
     load_exercises_from_json_if_empty()
 
 def load_exercises_from_json_if_empty():
@@ -203,6 +205,14 @@ def get_exercises(active_only=True, week=None, difficulty=None):
     conn.close()
     return exercises
 
+def get_all_exercises():
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, metric, points, week, difficulty FROM exercises ORDER BY name")
+    exercises = cur.fetchall()
+    conn.close()
+    return exercises
+
 def get_exercise_by_id(exercise_id):
     """Возвращает упражнение по ID (id, name, description, metric, points, week, difficulty)."""
     conn = sqlite3.connect(DB_NAME)
@@ -212,24 +222,64 @@ def get_exercise_by_id(exercise_id):
     conn.close()
     return row
 
-def get_all_exercises():
+def add_workout(user_id, exercise_id, result_value, video_link, user_level, comment=None):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
-    cur.execute("SELECT id, name, metric, points, week, difficulty FROM exercises ORDER BY name")
-    exercises = cur.fetchall()
+    # Вставляем новую тренировку, is_best пока 0
+    cur.execute("""
+        INSERT INTO workouts (user_id, exercise_id, result_value, video_link, user_level, comment)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (user_id, exercise_id, result_value, video_link, user_level, comment))
+    workout_id = cur.lastrowid
+    conn.commit()
     conn.close()
-    return exercises
+    # Обновляем личные рекорды
+    update_personal_best(user_id, exercise_id, result_value, metric_type)
+    return workout_id
 
-def add_workout(user_id, exercise_id, result_value, video_link, user_level, complex_id=None):
+def update_personal_best(user_id, exercise_id, new_result, metric_type):
+    """Проверяет, является ли новый результат лучшим, и обновляет is_best."""
+    # Получаем текущий лучший результат для этого упражнения
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO workouts (user_id, exercise_id, complex_id, result_value, video_link, user_level, is_best)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (user_id, exercise_id, complex_id, result_value, video_link, user_level, 0))
-    conn.commit()
+        SELECT id, result_value FROM workouts
+        WHERE user_id = ? AND exercise_id = ? AND is_best = 1
+    """, (user_id, exercise_id))
+    current_best = cur.fetchone()
+    is_new_best = False
+
+    # Сравниваем в зависимости от типа
+    if metric_type == 'reps':
+        # больше повторений – лучше
+        new_val = int(new_result)
+        if current_best:
+            old_val = int(current_best[1])
+            if new_val > old_val:
+                is_new_best = True
+        else:
+            is_new_best = True
+    else:  # time
+        # меньше время – лучше
+        # ожидаем формат ММ:СС, сравниваем как строки (они сравниваются лексикографически корректно)
+        if current_best:
+            if new_result < current_best[1]:
+                is_new_best = True
+        else:
+            is_new_best = True
+
+    if is_new_best:
+        # Сбрасываем старый лучший
+        if current_best:
+            cur.execute("UPDATE workouts SET is_best = 0 WHERE id = ?", (current_best[0],))
+        # Устанавливаем новый лучший (надо найти только что добавленную тренировку)
+        cur.execute("""
+            UPDATE workouts SET is_best = 1
+            WHERE user_id = ? AND exercise_id = ? AND result_value = ? AND is_best = 0
+            ORDER BY id DESC LIMIT 1
+        """, (user_id, exercise_id, new_result))
+        conn.commit()
     conn.close()
-    # TODO: позже добавим логику обновления is_best
 
 def add_exercise(name, description, metric, points=0, week=0, difficulty='beginner'):
     conn = sqlite3.connect(DB_NAME)
@@ -320,7 +370,6 @@ def get_leaderboard(period=None, level=None, limit=10):
     return results
 
 def get_user_workouts(user_id, limit=20):
-    """Возвращает последние тренировки пользователя."""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute("""
@@ -331,7 +380,8 @@ def get_user_workouts(user_id, limit=20):
             w.video_link,
             w.performed_at,
             w.is_best,
-            CASE WHEN w.exercise_id IS NOT NULL THEN 'упражнение' ELSE 'комплекс' END as type
+            CASE WHEN w.exercise_id IS NOT NULL THEN 'упражнение' ELSE 'комплекс' END as type,
+            w.comment
         FROM workouts w
         LEFT JOIN exercises e ON w.exercise_id = e.id
         LEFT JOIN complexes c ON w.complex_id = c.id
