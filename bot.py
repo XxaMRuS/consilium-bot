@@ -626,7 +626,7 @@ async def log_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     app.add_handler(CallbackQueryHandler(log_all_callbacks))
 
-    async def test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.message.reply_text(f"Тест: получен data = {query.data}")
