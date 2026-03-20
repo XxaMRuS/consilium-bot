@@ -601,6 +601,8 @@ async def test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
+    print("!!! MAIN CALLED !!!")   # это будет в логах Render
+    logger.info("MAIN: started")
     logger.info("MAIN: started")
     if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
