@@ -643,7 +643,7 @@ def main():
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
     app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
     # Потом универсальный тестовый (для отладки) — в самом конце
-    app.add_handler(CallbackQueryHandler(test_callback))
+  # app.add_handler(CallbackQueryHandler(test_callback))
 
     # --- Обработчики сообщений ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
