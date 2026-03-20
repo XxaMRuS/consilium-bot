@@ -2,12 +2,25 @@ import sqlite3
 import logging
 import json
 import os
+import shutil  # добавь этот импорт в начало файла, если его нет
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 DB_NAME = "workouts.db"
 EXERCISES_JSON = "exercises.json"
+
+def backup_database():
+    """Создаёт копию текущей базы данных, если она существует."""
+    if os.path.exists(DB_NAME):
+        backup_name = DB_NAME.replace('.db', '_backup.db')
+        try:
+            shutil.copy2(DB_NAME, backup_name)
+            logger.info(f"✅ Резервная копия базы создана: {backup_name}")
+        except Exception as e:
+            logger.error(f"❌ Не удалось создать резервную копию: {e}")
+    else:
+        logger.info("База данных не найдена, резервная копия не создана.")
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
