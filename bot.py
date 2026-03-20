@@ -174,7 +174,7 @@ async def record_from_catalog_callback(update: Update, context: ContextTypes.DEF
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         ["🏋️ Спорт", "📸 Фото"],
-        ["🤖 Задать вопрос", "📊 Моя статистика"],
+        ["🤖 Задать вопрос", "❌ Отмена"],
         ["🏆 Рейтинг", "⚙️ Админ"],
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -420,18 +420,11 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await sport_menu(update, context)
     elif text == "📸 Фото":
         await show_menu(update, context)
+    elif text == "❌ Отмена":
+        context.user_data.clear()
+        await update.message.reply_text("Все активные действия отменены. Можете начать заново.")
     elif text == "🤖 Задать вопрос":
         await update.message.reply_text("Напиши свой вопрос — я отвечу.")
-    elif text == "📊 Моя статистика":
-        keyboard = [
-            [InlineKeyboardButton("Сегодня", callback_data='stats_day'),
-             InlineKeyboardButton("Неделя", callback_data='stats_week')],
-            [InlineKeyboardButton("Месяц", callback_data='stats_month'),
-             InlineKeyboardButton("Год", callback_data='stats_year')],
-            [InlineKeyboardButton("За всё время", callback_data='stats_all')],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("Выбери период для статистики:", reply_markup=reply_markup)
     elif text == "🏆 Рейтинг":
         keyboard = [
             [InlineKeyboardButton("Новички", callback_data='top_beginner'),
