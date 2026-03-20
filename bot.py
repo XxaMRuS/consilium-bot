@@ -128,6 +128,17 @@ async def send_catalog_to_message(message):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
 
+# ========== ОБРАБОТЧИК ДЛЯ ВЫБОРА УРОВНЯ ==========
+async def setlevel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    level = query.data.split('_')[1]  # setlevel_beginner или setlevel_pro
+    user_id = update.effective_user.id
+    if set_user_level(user_id, level):
+        await query.edit_message_text(f"✅ Уровень изменён на «{level}».")
+    else:
+        await query.edit_message_text("❌ Ошибка при смене уровня.")
+
 # ========== ОБРАБОТЧИК ДЛЯ ВЫБОРА УПРАЖНЕНИЯ ИЗ КАТАЛОГА ==========
 async def exercise_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -156,10 +167,8 @@ async def record_from_catalog_callback(update: Update, context: ContextTypes.DEF
     query = update.callback_query
     await query.answer()
     ex_id = int(query.data.split('_')[1])
-    # Запоминаем выбранное упражнение
     context.user_data['pending_exercise'] = ex_id
     await query.edit_message_text("Теперь отправь команду /wod, чтобы записать это упражнение.")
-    # Альтернативно можно сразу запустить диалог, но проще оставить так, чтобы не менять ConversationHandler.
 
 # ========== ОСНОВНЫЕ ОБРАБОТЧИКИ КОМАНД ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -386,7 +395,12 @@ async def sport_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.message.reply_text("Выбери период для статистики:", reply_markup=reply_markup)
         elif data == 'sport_setlevel':
-            await query.message.reply_text("Чтобы сменить уровень, используй /setlevel beginner или /setlevel pro.")
+            keyboard = [
+                [InlineKeyboardButton("Новичок (beginner)", callback_data="setlevel_beginner")],
+                [InlineKeyboardButton("Профи (pro)", callback_data="setlevel_pro")],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.message.reply_text("Выбери уровень:", reply_markup=reply_markup)
         elif data == 'back_to_main':
             keyboard = [
                 ["🏋️ Спорт", "📸 Фото"],
@@ -515,11 +529,18 @@ async def load_exercises_command(update: Update, context: ContextTypes.DEFAULT_T
 
 async def setlevel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if not context.args or context.args[0] not in ('beginner', 'pro'):
-        await update.message.reply_text("❌ Используй: /setlevel beginner или pro")
-        return
-    if set_user_level(user_id, context.args[0]):
-        await update.message.reply_text(f"✅ Уровень изменён на {context.args[0]}.")
+    if context.args and context.args[0] in ('beginner', 'pro'):
+        if set_user_level(user_id, context.args[0]):
+            await update.message.reply_text(f"✅ Уровень изменён на {context.args[0]}.")
+        else:
+            await update.message.reply_text("❌ Ошибка при смене уровня.")
+    else:
+        keyboard = [
+            [InlineKeyboardButton("Новичок (beginner)", callback_data="setlevel_beginner")],
+            [InlineKeyboardButton("Профи (pro)", callback_data="setlevel_pro")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("Выбери уровень:", reply_markup=reply_markup)
 
 # ========== СТАТИСТИКА И РЕЙТИНГ ==========
 async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE, period=None):
@@ -547,47 +568,15 @@ async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE, league
 async def stats_period_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    logger.info(f"DEBUG: stats_period_callback вызван с data = {query.data}")
     period = query.data.split('_')[1] if query.data != 'stats_all' else None
     await mystats_command(update, context, period=period)
 
 async def top_league_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    league = query.data.split('_')[1]  # top_beginner или top_pro
+    league = query.data.split('_')[1]
     await top_command(update, context, league=league)
-
-# ========== УВЕДОМЛЕНИЯ И НАПОМИНАНИЯ ==========
-async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Устанавливает напоминание: /remind 20:00 Приседания"""
-    if not context.args:
-        await update.message.reply_text("Использование: /remind <время> <сообщение>\nНапример: /remind 20:00 Приседания")
-        return
-    # Парсим время и сообщение
-    time_str = context.args[0]
-    message = " ".join(context.args[1:])
-    if not message:
-        await update.message.reply_text("Укажи сообщение для напоминания.")
-        return
-    # Проверяем формат времени HH:MM
-    if not re.match(r'^\d{1,2}:\d{2}$', time_str):
-        await update.message.reply_text("Неверный формат времени. Используй ЧЧ:ММ (например, 20:00).")
-        return
-    try:
-        hour, minute = map(int, time_str.split(':'))
-        now = datetime.now()
-        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if target < now:
-            target = target + timedelta(days=1)
-        delta = (target - now).total_seconds()
-        # Планируем задачу
-        context.job_queue.run_once(send_reminder, delta, context={'chat_id': update.effective_chat.id, 'message': message})
-        await update.message.reply_text(f"Напоминание установлено на {time_str}: {message}")
-    except Exception as e:
-        await update.message.reply_text(f"Ошибка: {e}")
-
-async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
-    job = context.job
-    await context.bot.send_message(chat_id=job.context['chat_id'], text=f"🔔 Напоминание: {job.context['message']}")
 
 # ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
@@ -613,7 +602,6 @@ def main():
     app.add_handler(CommandHandler("setlevel", setlevel_command))
     app.add_handler(CommandHandler("catalog", catalog_command))
     app.add_handler(CommandHandler("myhistory", myhistory_command))
-    
 
     # --- Диалог тренировок ---
     workout_conv = ConversationHandler(
@@ -628,14 +616,15 @@ def main():
     )
     app.add_handler(workout_conv)
 
-    # --- Колбэки (порядок важен) ---
+    # --- Колбэки ---
     app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
-    app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^sport_|^back_to_main$'))
-    app.add_handler(CallbackQueryHandler(help_callback, pattern='^help_'))
     app.add_handler(CallbackQueryHandler(stats_period_callback, pattern='^stats_'))
     app.add_handler(CallbackQueryHandler(top_league_callback, pattern='^top_'))
-    app.add_handler(CallbackQueryHandler(exercise_callback, pattern='^ex_'))  # для выбора упражнения из каталога
+    app.add_handler(CallbackQueryHandler(setlevel_callback, pattern='^setlevel_'))
+    app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^sport_|^back_to_main$'))
+    app.add_handler(CallbackQueryHandler(help_callback, pattern='^help_'))
+    app.add_handler(CallbackQueryHandler(exercise_callback, pattern='^ex_'))
     app.add_handler(CallbackQueryHandler(record_from_catalog_callback, pattern='^record_'))
 
     # --- Сообщения ---
@@ -643,7 +632,6 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Запускаем JobQueue
     logger.info("🚀 Бот запущен...")
     app.run_polling(drop_pending_updates=True)
 
