@@ -485,18 +485,20 @@ def main():
     )
     app.add_handler(workout_conv)
 
-    # --- Колбэки (ВАЖНО: Сначала специфичные паттерны!) ---
+    # --- Колбэки ---
     app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
-    app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
+    
+    # ТА САМАЯ СТРОКА (ТЕПЕРЬ БЕЗ ОГРАНИЧЕНИЯ В КОНЦЕ ДЛЯ SPORT)
+    app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^sport_|^back_to_main$'))
 
-    # --- Отладочный обработчик (теперь внутри main и ловит то, что не попало выше) ---
+    # --- Отладочный обработчик (всегда в самом конце) ---
     async def debug_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
         logger.info(f"DEBUG Callback: {query.data}")
 
-    app.add_handler(CallbackQueryHandler(debug_all)) # Ставим в самый конец!
+    app.add_handler(CallbackQueryHandler(debug_all))
 
     # --- Сообщения ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
