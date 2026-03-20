@@ -4,10 +4,10 @@ import asyncio
 import re
 import json
 import shlex
+from datetime import datetime
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
-from datetime import datetime, timedelta
 from telegram import ReplyKeyboardMarkup, KeyboardButton
 
 # === ИМПОРТЫ ДЛЯ ТЕЛЕГРАМА И КНОПОК ===
@@ -613,7 +613,7 @@ def main():
     app.add_handler(CommandHandler("setlevel", setlevel_command))
     app.add_handler(CommandHandler("catalog", catalog_command))
     app.add_handler(CommandHandler("myhistory", myhistory_command))
-    app.add_handler(CommandHandler("remind", remind_command))  # новая команда
+    
 
     # --- Диалог тренировок ---
     workout_conv = ConversationHandler(
@@ -644,7 +644,6 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Запускаем JobQueue
-    app.job_queue.start()
     logger.info("🚀 Бот запущен...")
     app.run_polling(drop_pending_updates=True)
 
