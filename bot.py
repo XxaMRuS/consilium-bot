@@ -626,10 +626,17 @@ async def log_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     app.add_handler(CallbackQueryHandler(log_all_callbacks))
 
+    async def test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text(f"Тест: получен data = {query.data}")
+
+    app.add_handler(CallbackQueryHandler(test_callback))
+
     # --- Обработчики колбэков ---
-    app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
-    app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
-    app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
+   #  app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
+   #  app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
+   #  app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
 
     # --- Обработчики сообщений ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
