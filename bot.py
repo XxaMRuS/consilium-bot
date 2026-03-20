@@ -31,7 +31,8 @@ from database import (
     set_exercise_week, get_user_stats, get_leaderboard,
     get_all_exercises, delete_exercise,
     get_user_level, set_user_level,
-    get_user_workouts, get_exercise_by_id
+    get_user_workouts, get_exercise_by_id,
+    backup_database  # ← добавить
 )
 from workout_handlers import (
     workout_start, exercise_choice, result_input, video_input,
@@ -88,6 +89,8 @@ Thread(target=run_http_server, daemon=True).start()
 # === ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ===
 init_db()
 logger.info("База данных готова к работе.")
+backup_database()  # ← добавить
+
 
 # ========== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ОТПРАВКИ КАТАЛОГА (КНОПОЧНАЯ) ==========
 async def send_catalog_to_message(message):
