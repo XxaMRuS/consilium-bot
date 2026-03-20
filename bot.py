@@ -7,7 +7,7 @@ import shlex
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from telegram import ReplyKeyboardMarkup, KeyboardButton
 
 # === ИМПОРТЫ ДЛЯ ТЕЛЕГРАМА И КНОПОК ===
