@@ -2,11 +2,11 @@ import logging
 import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
-from database import add_user, get_exercises, add_workout, get_user_level
+from database import add_user, get_exercises, add_workout, get_user_level, get_exercise_by_id
 
 logger = logging.getLogger(__name__)
 
-EXERCISE, RESULT, VIDEO = range(3)
+EXERCISE, RESULT, VIDEO, COMMENT = range(4)  # добавили состояние COMMENT
 
 def get_current_week():
     from datetime import datetime
@@ -14,21 +14,32 @@ def get_current_week():
 
 async def workout_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    # При первом запуске уровень уже должен быть установлен (по умолчанию beginner)
-    # Если нет, установим beginner (это может быть старый пользователь)
-    level = get_user_level(user.id)
-    # Но пользователя может не быть в БД, тогда добавим с уровнем beginner
-    add_user(user.id, user.first_name, user.last_name, user.username, level)
+    add_user(user.id, user.first_name, user.last_name, user.username, get_user_level(user.id))
+
+    # Если есть предварительно выбранное упражнение (из каталога)
+    if 'pending_exercise' in context.user_data:
+        ex_id = context.user_data.pop('pending_exercise')
+        ex = get_exercise_by_id(ex_id)
+        if ex:
+            context.user_data['exercise_id'] = ex_id
+            metric = ex[3]
+            context.user_data['metric'] = metric
+            if metric == 'reps':
+                await update.message.reply_text("🔢 Введи количество повторений (только число):")
+            else:
+                await update.message.reply_text("⏱️ Введи время в формате ММ:СС (например, 05:30):")
+            return RESULT
+        # если не нашлось, идём по обычному пути
 
     current_week = get_current_week()
-    # Показываем упражнения только для уровня пользователя
-    exercises = get_exercises(active_only=True, week=current_week, difficulty=level)
+    exercises = get_exercises(active_only=True, week=current_week, difficulty=get_user_level(user.id))
     if not exercises:
-        await update.message.reply_text("❌ На этой неделе нет активных упражнений для твоего уровня. Загляни позже!")
+        await update.message.reply_text("❌ На этой неделе нет активных упражнений. Загляни позже!")
         return ConversationHandler.END
 
     keyboard = []
-    for ex_id, name, metric, points, week, difficulty in exercises:
+    for ex in exercises:
+        ex_id, name, metric, points, week, difficulty = ex
         btn_text = f"{name} ({points} баллов)" if points else name
         keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"ex_{ex_id}")])
     keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
@@ -48,11 +59,7 @@ async def exercise_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ex_id = int(query.data.split("_")[1])
     context.user_data['exercise_id'] = ex_id
 
-    # Получим текущий уровень пользователя
-    user_id = update.effective_user.id
-    level = get_user_level(user_id)
-    current_week = get_current_week()
-    exercises = get_exercises(active_only=True, week=current_week, difficulty=level)
+    exercises = get_exercises(active_only=True, week=get_current_week(), difficulty=get_user_level(update.effective_user.id))
     ex_metric = None
     for ex in exercises:
         if ex[0] == ex_id:
@@ -81,6 +88,7 @@ async def result_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Неправильный формат. Введи время как ММ:СС (например, 05:30).")
             return RESULT
         context.user_data['result_value'] = text
+
     await update.message.reply_text("📎 Теперь отправь ссылку на видео с выполнением (Google Drive, YouTube и т.п.)")
     return VIDEO
 
@@ -90,16 +98,32 @@ async def video_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Это не похоже на ссылку. Попробуй ещё раз (должно начинаться с http:// или https://)")
         return VIDEO
 
+    context.user_data['video_link'] = video_link
+
+    await update.message.reply_text("💬 Добавь комментарий к тренировке (можно пропустить, нажми /skip или просто отправь сообщение):")
+    return COMMENT
+
+async def comment_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    comment = update.message.text
+    if comment == '/skip':
+        comment = None
+    context.user_data['comment'] = comment
+
+    # Сохраняем всё
     user_id = update.effective_user.id
     exercise_id = context.user_data['exercise_id']
     result_value = context.user_data['result_value']
-    # Получаем текущий уровень пользователя
-    level = get_user_level(user_id)
-    add_workout(user_id, exercise_id, result_value, video_link, level)
+    video_link = context.user_data['video_link']
+    user_level = get_user_level(user_id)
+    comment = context.user_data.get('comment')
+
+    add_workout(user_id, exercise_id, result_value, video_link, user_level, comment)
+
     await update.message.reply_text(
         "✅ Тренировка успешно записана! Спасибо за честность.\n"
         "Можешь посмотреть свои результаты командой /mystats, а таблицу лидеров — /top."
     )
+
     context.user_data.clear()
     return ConversationHandler.END
 
