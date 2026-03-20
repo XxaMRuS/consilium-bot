@@ -273,7 +273,8 @@ async def sport_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     data = query.data
     try:
         if data == 'sport_catalog':
-            await query.message.reply_text("Вот каталог упражнений (используй команду /catalog):")
+            # Вызываем существующую функцию каталога напрямую
+            await catalog_command(query, context)
         elif data == 'sport_wod':
             await query.message.reply_text("Отправь команду /wod, чтобы записать тренировку.")
         elif data == 'sport_mystats':
