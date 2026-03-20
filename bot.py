@@ -254,7 +254,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ========== СПОРТИВНОЕ МЕНЮ И КОЛБЭКИ ==========
 async def sport_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("DEBUG: sport_menu opened")  # отладку можно убрать
     keyboard = [
         [InlineKeyboardButton("📋 Каталог упражнений", callback_data='sport_catalog')],
         [InlineKeyboardButton("✍️ Записать тренировку", callback_data='sport_wod')],
@@ -271,11 +270,6 @@ async def sport_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def sport_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    # === ОТЛАДКА: раскомментировать для проверки вызова обработчика ===
-    # await query.message.reply_text("DEBUG: callback received")
-    # logger.info(f"sport_callback_handler called with data = {query.data}")
-    # === КОНЕЦ ОТЛАДКИ ===
-
     data = query.data
     try:
         if data == 'sport_catalog':
@@ -300,7 +294,6 @@ async def sport_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         await query.message.reply_text("❌ Произошла ошибка. Попробуй позже.")
 
 async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обрабатывает нажатия на кнопки главного меню."""
     text = update.message.text
     if text == "🏋️ Спорт":
         await sport_menu(update, context)
@@ -322,23 +315,19 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ========== КАТАЛОГ УПРАЖНЕНИЙ ==========
 async def catalog_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает каталог упражнений с пометками о доступности."""
     user_id = update.effective_user.id
     current_week = get_current_week()
     exercises = get_all_exercises()
-
     if not exercises:
         await update.message.reply_text("Список упражнений пока пуст.")
         return
-
     permanent = []
     weekly = []
     for ex in exercises:
-        if ex[4] == 0:  # week = 0
+        if ex[4] == 0:
             permanent.append(ex)
         else:
             weekly.append(ex)
-
     text = "📋 **Каталог упражнений**\n\n"
     if permanent:
         text += "♾️ **Доступны всегда:**\n"
@@ -347,7 +336,6 @@ async def catalog_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             metric_icon = "🔢" if metric == 'reps' else "⏱️"
             text += f"{metric_icon} {name} — {points} баллов, уровень: {difficulty}\n"
         text += "\n"
-
     if weekly:
         text += "📅 **По неделям:**\n"
         for ex in weekly:
@@ -360,7 +348,6 @@ async def catalog_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 status = f"🔜 будет на неделе {week}"
             text += f"{metric_icon} {name} — {points} баллов, уровень: {difficulty} ({status})\n"
-
     await update.message.reply_text(text, parse_mode='Markdown')
 
 async def myhistory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -370,12 +357,10 @@ async def myhistory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         limit = int(context.args[0])
         if limit > 50:
             limit = 50
-
     workouts = get_user_workouts(user_id, limit)
     if not workouts:
         await update.message.reply_text("У тебя пока нет записанных тренировок.")
         return
-
     text = f"📋 **Твои последние {len(workouts)} тренировок:**\n\n"
     for w in workouts:
         wid, name, result, video, date, is_best, typ = w
@@ -385,7 +370,6 @@ async def myhistory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(text) > 3500:
             text += "\n...и ещё"
             break
-
     await update.message.reply_text(text, parse_mode='Markdown', disable_web_page_preview=True)
 
 # ========== АДМИН-КОМАНДЫ ДЛЯ УПРАЖНЕНИЙ ==========
@@ -393,214 +377,86 @@ async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYP
     if not is_admin(update):
         await update.message.reply_text("⛔ Нет прав.")
         return
-
     full_text = update.message.text
     if ' ' not in full_text:
-        await update.message.reply_text(
-            "Использование: /addexercise <название> <reps|time> <описание> <баллы> [неделя] [difficulty]\n"
-            "difficulty: beginner или pro (по умолчанию beginner)\n"
-            "Пример: /addexercise \"Берпочки 50 штук\" reps \"Берпочки любимые\" 10 15 pro"
-        )
+        await update.message.reply_text("Использование: /addexercise <название> <reps|time> <описание> <баллы> [неделя] [difficulty]")
         return
-
     args_part = full_text.split(maxsplit=1)[1]
     try:
         args = shlex.split(args_part)
-    except ValueError as e:
-        await update.message.reply_text(f"❌ Ошибка в кавычках: {e}")
-        return
-
-    if len(args) < 4:
-        await update.message.reply_text("❌ Нужно минимум 4 аргумента: название тип описание баллы")
-        return
-
-    name = args[0]
-    metric = args[1]
-    if metric not in ('reps', 'time'):
-        await update.message.reply_text("❌ Тип упражнения должен быть 'reps' или 'time'.")
-        return
-
-    try:
-        if len(args) == 4:
-            points = int(args[3])
-            week = 0
-            difficulty = 'beginner'
-            description = " ".join(args[2:3])
-        elif len(args) == 5:
-            if args[4].isdigit():
-                week = int(args[4])
-                points = int(args[3])
-                difficulty = 'beginner'
-                description = " ".join(args[2:3])
-            else:
-                if args[4] not in ('beginner', 'pro'):
-                    await update.message.reply_text("❌ Уровень сложности должен быть 'beginner' или 'pro'.")
-                    return
-                week = 0
-                points = int(args[3])
-                difficulty = args[4]
-                description = " ".join(args[2:3])
-        elif len(args) == 6:
-            points = int(args[3])
-            week = int(args[4])
-            difficulty = args[5]
-            if difficulty not in ('beginner', 'pro'):
-                await update.message.reply_text("❌ Уровень сложности должен быть 'beginner' или 'pro'.")
-                return
-            description = " ".join(args[2:3])
+        if len(args) < 4:
+             await update.message.reply_text("❌ Нужно минимум 4 аргумента.")
+             return
+        name, metric, desc, points = args[0], args[1], args[2], int(args[3])
+        week = int(args[4]) if len(args) > 4 and args[4].isdigit() else 0
+        diff = args[5] if len(args) > 5 else 'beginner'
+        if add_exercise(name, desc, metric, points, week, diff):
+            await update.message.reply_text(f"✅ Упражнение '{name}' добавлено.")
         else:
-            await update.message.reply_text("❌ Неправильное количество аргументов.")
-            return
-    except ValueError:
-        await update.message.reply_text("❌ Баллы и неделя должны быть числами.")
-        return
-
-    if add_exercise(name, description, metric, points, week, difficulty):
-        week_text = f", неделя: {week}" if week != 0 else ""
-        await update.message.reply_text(f"✅ Упражнение '{name}' добавлено (баллы: {points}{week_text}, уровень: {difficulty}).")
-    else:
-        await update.message.reply_text(f"❌ Упражнение с таким именем уже существует.")
+            await update.message.reply_text("❌ Ошибка добавления.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка парсинга: {e}")
 
 async def delete_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update):
-        await update.message.reply_text("⛔ Нет прав.")
-        return
-    if len(context.args) != 1:
-        await update.message.reply_text("Использование: /delexercise <id_упражнения>")
-        return
-    try:
-        ex_id = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text("❌ ID должен быть числом.")
-        return
-    if delete_exercise(ex_id):
-        await update.message.reply_text(f"✅ Упражнение с ID {ex_id} удалено.")
+    if not is_admin(update) or not context.args: return
+    if delete_exercise(int(context.args[0])):
+        await update.message.reply_text("✅ Удалено.")
     else:
-        await update.message.reply_text(f"❌ Упражнение с ID {ex_id} не найдено.")
+        await update.message.reply_text("❌ Не найдено.")
 
 async def list_exercises_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update):
-        await update.message.reply_text("⛔ Нет прав.")
-        return
+    if not is_admin(update): return
     exercises = get_all_exercises()
-    if not exercises:
-        await update.message.reply_text("Список упражнений пуст.")
-        return
     text = "📋 **Список упражнений:**\n\n"
     for ex in exercises:
-        ex_id, name, metric, points, week, difficulty = ex
-        week_text = f" (неделя {week})" if week != 0 else ""
-        text += f"🔹 ID: {ex_id} — {name} — {points} баллов, уровень: {difficulty}{week_text}\n"
+        text += f"🔹 ID: {ex[0]} — {ex[1]} ({ex[5]})\n"
     await update.message.reply_text(text, parse_mode='Markdown')
 
 async def load_exercises_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update):
-        await update.message.reply_text("⛔ Нет прав.")
-        return
+    if not is_admin(update): return
     try:
         with open('exercises.json', 'r', encoding='utf-8') as f:
-            exercises = json.load(f)
-    except FileNotFoundError:
-        await update.message.reply_text("❌ Файл exercises.json не найден.")
-        return
-    except json.JSONDecodeError:
-        await update.message.reply_text("❌ Ошибка в JSON-файле.")
-        return
-    added = 0
-    skipped = 0
-    for ex in exercises:
-        name = ex.get('name')
-        metric = ex.get('metric')
-        description = ex.get('description', '')
-        points = ex.get('points', 0)
-        week = ex.get('week', 0)
-        difficulty = ex.get('difficulty', 'beginner')
-        if add_exercise(name, description, metric, points, week, difficulty):
-            added += 1
-        else:
-            skipped += 1
-    await update.message.reply_text(f"✅ Загружено: {added} упражнений, пропущено (уже есть): {skipped}.")
+            data = json.load(f)
+            for ex in data:
+                add_exercise(ex['name'], ex.get('description',''), ex['metric'], ex['points'], ex.get('week',0), ex.get('difficulty','beginner'))
+        await update.message.reply_text("✅ Загружено.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка: {e}")
 
-# ========== КОМАНДЫ ДЛЯ РАБОТЫ С УРОВНЕМ ПОЛЬЗОВАТЕЛЯ ==========
 async def setlevel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if len(context.args) != 1 or context.args[0] not in ('beginner', 'pro'):
-        await update.message.reply_text(
-            "❌ Использование: /setlevel beginner  или  /setlevel pro\n"
-            "Предупреждение: при смене уровня твой счёт в новой лиге начнётся с нуля, "
-            "но общий счёт сохранится."
-        )
+    if not context.args or context.args[0] not in ('beginner', 'pro'):
+        await update.message.reply_text("❌ Используй: /setlevel beginner или pro")
         return
-    new_level = context.args[0]
-    if set_user_level(user_id, new_level):
-        await update.message.reply_text(f"✅ Твой уровень изменён на «{new_level}». Теперь твои тренировки будут учитываться в этой лиге.")
-    else:
-        await update.message.reply_text("❌ Ошибка при смене уровня.")
+    if set_user_level(user_id, context.args[0]):
+        await update.message.reply_text(f"✅ Уровень изменён на {context.args[0]}.")
 
-# ========== СТАТИСТИКА ==========
 async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     period = context.args[0] if context.args else None
-    if period and period not in ('day', 'week', 'month', 'year'):
-        await update.message.reply_text("❌ Неверный период. Используй: day, week, month, year")
-        return
-
-    total_points, total_workouts = get_user_stats(user_id, period, level=None)
-    level_points, level_workouts = get_user_stats(user_id, period, level=get_user_level(user_id))
-
-    period_text = f" за {period}" if period else " за всё время"
-    text = f"📊 **Твоя статистика{period_text}:**\n"
-    text += f"🏋️ Всего тренировок: {total_workouts or 0}\n"
-    text += f"⭐ Всего баллов: {total_points or 0}\n\n"
-    text += f"**В текущей лиге:**\n"
-    text += f"🏋️ Тренировок: {level_workouts or 0}\n"
-    text += f"⭐ Баллов: {level_points or 0}"
-    await update.message.reply_text(text, parse_mode='Markdown')
+    pts, wods = get_user_stats(user_id, period)
+    await update.message.reply_text(f"📊 Тренировок: {wods or 0}\n⭐ Баллов: {pts or 0}")
 
 async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args
-    period = None
     level = get_user_level(update.effective_user.id)
-
-    for arg in args:
-        if arg in ('day', 'week', 'month', 'year'):
-            period = arg
-        elif arg in ('beginner', 'pro'):
-            level = arg
-
-    limit = 10
-    leaderboard = get_leaderboard(period, level, limit)
+    leaderboard = get_leaderboard(None, level)
     if not leaderboard:
-        await update.message.reply_text("Пока нет данных для таблицы лидеров.")
+        await update.message.reply_text("Нет данных.")
         return
-
-    period_text = f" за {period}" if period else " за всё время"
-    level_text = "Новички" if level == 'beginner' else "Профи"
-    text = f"🏆 **Топ-{limit} {level_text}{period_text}:**\n"
-    for i, (uid, first_name, username, total) in enumerate(leaderboard, 1):
-        name = first_name or username or f"User{uid}"
-        text += f"{i}. {name} — {total} баллов\n"
+    text = "🏆 **Топ игроков:**\n"
+    for i, (uid, fname, uname, total) in enumerate(leaderboard, 1):
+        text += f"{i}. {fname or uname} — {total}\n"
     await update.message.reply_text(text, parse_mode='Markdown')
-
-# ========== ОТЛАДОЧНЫЕ ОБРАБОТЧИКИ (только для диагностики) ==========
-# === ОТЛАДКА: можно раскомментировать для проверки колбэков ===
-# async def test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     query = update.callback_query
-#     await query.answer()
-#     await query.message.reply_text(f"Тест: получен data = {query.data}")
-# === КОНЕЦ ОТЛАДКИ ===
 
 # ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
-    print("!!! MAIN CALLED !!!")
     logger.info("MAIN: started")
     if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
-    logger.info("MAIN: token ok")
+    
     app = Application.builder().token(TOKEN).build()
-    logger.info("MAIN: app built")
 
-    # --- Обычные команды ---
+    # --- Команды ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", show_menu))
     app.add_handler(CommandHandler("help", help_command))
@@ -617,7 +473,7 @@ def main():
     app.add_handler(CommandHandler("catalog", catalog_command))
     app.add_handler(CommandHandler("myhistory", myhistory_command))
 
-    # --- ДИАЛОГ ТРЕНИРОВОК ---
+    # --- Диалог тренировок ---
     workout_conv = ConversationHandler(
         entry_points=[CommandHandler('wod', workout_start)],
         states={
@@ -629,26 +485,29 @@ def main():
     )
     app.add_handler(workout_conv)
 
-    # --- Обработчики колбэков (порядок важен!) ---
-    # Сначала обработчики с конкретными pattern
+    # --- Колбэки (ВАЖНО: Сначала специфичные паттерны!) ---
     app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
     app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
-    # Отладочный обработчик (ловит всё, что не подошло выше) — раскомментирован
-    app.add_handler(CallbackQueryHandler(test_callback))
 
-    # --- Обработчики сообщений ---
+    # --- Отладочный обработчик (теперь внутри main и ловит то, что не попало выше) ---
+    async def debug_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        logger.info(f"DEBUG Callback: {query.data}")
+
+    app.add_handler(CallbackQueryHandler(debug_all)) # Ставим в самый конец!
+
+    # --- Сообщения ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    logger.info("MAIN: handlers added")
-    print("🚀 Бот запущен...")
     logger.info("🚀 Бот запущен...")
     app.run_polling(drop_pending_updates=True)
+
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        logger.exception("Критическая ошибка в main: %s", e)
-        raise
+        logger.exception("Критическая ошибка: %s", e)
