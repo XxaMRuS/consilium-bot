@@ -36,7 +36,7 @@ from database import (
 from workout_handlers import (
     workout_start, exercise_choice, result_input, video_input,
     workout_cancel, EXERCISE, RESULT, VIDEO, COMMENT,
-    get_current_week, comment_input
+    get_current_week, comment_input, comment_skip
 )
 
 # === НАСТРОЙКА ЛОГИРОВАНИЯ ===
@@ -576,10 +576,9 @@ async def stats_period_callback(update: Update, context: ContextTypes.DEFAULT_TY
     await query.message.reply_text(f"📊 Твоя статистика{period_text}:\n🏋️ Тренировок: {wods or 0}\n⭐ Баллов: {pts or 0}")
 
 async def top_league_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = updasync def top_league_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    league = query.data.split('_')[1]  # top_beginner или top_pro
+    league = query.data.split('_')[1]
     user_id = update.effective_user.id
     leaderboard = get_leaderboard(None, league)
     if not leaderboard:
@@ -624,7 +623,7 @@ def main():
             RESULT: [MessageHandler(filters.TEXT & ~filters.COMMAND, result_input)],
             VIDEO: [MessageHandler(filters.TEXT & ~filters.COMMAND, video_input)],
             COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, comment_input),
-                      CommandHandler('skip', lambda u,c: comment_skip(u,c))],
+                      CommandHandler('skip', comment_skip)],
         },
         fallbacks=[CommandHandler('cancel', workout_cancel)],
     )
