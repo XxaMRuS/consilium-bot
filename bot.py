@@ -88,6 +88,43 @@ Thread(target=run_http_server, daemon=True).start()
 init_db()
 logger.info("База данных готова к работе.")
 
+# ========== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ОТПРАВКИ КАТАЛОГА ==========
+async def send_catalog_to_message(message):
+    """Отправляет каталог упражнений в указанное сообщение (для команд и колбэков)."""
+    current_week = get_current_week()
+    exercises = get_all_exercises()
+    if not exercises:
+        await message.reply_text("Список упражнений пока пуст.")
+        return
+    permanent = []
+    weekly = []
+    for ex in exercises:
+        if ex[4] == 0:
+            permanent.append(ex)
+        else:
+            weekly.append(ex)
+    text = "📋 **Каталог упражнений**\n\n"
+    if permanent:
+        text += "♾️ **Доступны всегда:**\n"
+        for ex in permanent:
+            name, metric, points, difficulty = ex[1], ex[2], ex[3], ex[5]
+            metric_icon = "🔢" if metric == 'reps' else "⏱️"
+            text += f"{metric_icon} {name} — {points} баллов, уровень: {difficulty}\n"
+        text += "\n"
+    if weekly:
+        text += "📅 **По неделям:**\n"
+        for ex in weekly:
+            name, metric, points, week, difficulty = ex[1], ex[2], ex[3], ex[4], ex[5]
+            metric_icon = "🔢" if metric == 'reps' else "⏱️"
+            if week == current_week:
+                status = "✅ доступно сейчас"
+            elif week < current_week:
+                status = "⏳ прошлая неделя"
+            else:
+                status = f"🔜 будет на неделе {week}"
+            text += f"{metric_icon} {name} — {points} баллов, уровень: {difficulty} ({status})\n"
+    await message.reply_text(text, parse_mode='Markdown')
+
 # ========== ОСНОВНЫЕ ОБРАБОТЧИКИ КОМАНД ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -273,8 +310,7 @@ async def sport_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     data = query.data
     try:
         if data == 'sport_catalog':
-            # Вызываем существующую функцию каталога напрямую
-            await catalog_command(query, context)
+            await send_catalog_to_message(query.message)
         elif data == 'sport_wod':
             await query.message.reply_text("Отправь команду /wod, чтобы записать тренировку.")
         elif data == 'sport_mystats':
@@ -316,40 +352,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ========== КАТАЛОГ УПРАЖНЕНИЙ ==========
 async def catalog_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    current_week = get_current_week()
-    exercises = get_all_exercises()
-    if not exercises:
-        await update.message.reply_text("Список упражнений пока пуст.")
-        return
-    permanent = []
-    weekly = []
-    for ex in exercises:
-        if ex[4] == 0:
-            permanent.append(ex)
-        else:
-            weekly.append(ex)
-    text = "📋 **Каталог упражнений**\n\n"
-    if permanent:
-        text += "♾️ **Доступны всегда:**\n"
-        for ex in permanent:
-            name, metric, points, difficulty = ex[1], ex[2], ex[3], ex[5]
-            metric_icon = "🔢" if metric == 'reps' else "⏱️"
-            text += f"{metric_icon} {name} — {points} баллов, уровень: {difficulty}\n"
-        text += "\n"
-    if weekly:
-        text += "📅 **По неделям:**\n"
-        for ex in weekly:
-            name, metric, points, week, difficulty = ex[1], ex[2], ex[3], ex[4], ex[5]
-            metric_icon = "🔢" if metric == 'reps' else "⏱️"
-            if week == current_week:
-                status = "✅ доступно сейчас"
-            elif week < current_week:
-                status = "⏳ прошлая неделя"
-            else:
-                status = f"🔜 будет на неделе {week}"
-            text += f"{metric_icon} {name} — {points} баллов, уровень: {difficulty} ({status})\n"
-    await update.message.reply_text(text, parse_mode='Markdown')
+    await send_catalog_to_message(update.message)
 
 async def myhistory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -432,11 +435,15 @@ async def setlevel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if set_user_level(user_id, context.args[0]):
         await update.message.reply_text(f"✅ Уровень изменён на {context.args[0]}.")
 
-async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ========== СТАТИСТИКА (доработанная) ==========
+async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE, period=None):
     user_id = update.effective_user.id
-    period = context.args[0] if context.args else None
+    # Если период передан через аргумент (из команды) или через колбэк
+    if period is None and context.args:
+        period = context.args[0]
     pts, wods = get_user_stats(user_id, period)
-    await update.message.reply_text(f"📊 Тренировок: {wods or 0}\n⭐ Баллов: {pts or 0}")
+    period_text = f" за {period}" if period else " за всё время"
+    await update.message.reply_text(f"📊 Твоя статистика{period_text}:\n🏋️ Тренировок: {wods or 0}\n⭐ Баллов: {pts or 0}")
 
 async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     level = get_user_level(update.effective_user.id)
@@ -449,12 +456,20 @@ async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"{i}. {fname or uname} — {total}\n"
     await update.message.reply_text(text, parse_mode='Markdown')
 
+# ========== ОБРАБОТЧИК КНОПОК СТАТИСТИКИ ==========
+async def stats_period_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    period = query.data.split('_')[1] if query.data != 'stats_all' else None
+    # Заменяем исходное сообщение с кнопками на результат
+    await mystats_command(update, context, period=period)
+
 # ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
     logger.info("MAIN: started")
     if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
-    
+
     app = Application.builder().token(TOKEN).build()
 
     # --- Команды ---
@@ -486,20 +501,12 @@ def main():
     )
     app.add_handler(workout_conv)
 
-    # --- Колбэки ---
+    # --- Колбэки (порядок важен) ---
     app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
-    
-    # ТА САМАЯ СТРОКА (ТЕПЕРЬ БЕЗ ОГРАНИЧЕНИЯ В КОНЦЕ ДЛЯ SPORT)
     app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^sport_|^back_to_main$'))
-
-    # --- Отладочный обработчик (всегда в самом конце) ---
-    async def debug_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
-        logger.info(f"DEBUG Callback: {query.data}")
-
-    app.add_handler(CallbackQueryHandler(debug_all))
+    # Обработчик для кнопок выбора периода статистики
+    app.add_handler(CallbackQueryHandler(stats_period_callback, pattern='^stats_'))
 
     # --- Сообщения ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
