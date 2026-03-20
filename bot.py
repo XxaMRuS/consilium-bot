@@ -603,10 +603,6 @@ async def test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     logger.info("MAIN: started")
     if not TOKEN:
-        raise ValueError("Забыли T# ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
-def main():
-    logger.info("MAIN: started")
-    if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
     logger.info("MAIN: token ok")
     app = Application.builder().token(TOKEN).build()
