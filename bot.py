@@ -31,11 +31,12 @@ from database import (
     set_exercise_week, get_user_stats, get_leaderboard,
     get_all_exercises, delete_exercise,
     get_user_level, set_user_level,
-    get_user_workouts
+    get_user_workouts, get_exercise_by_id
 )
 from workout_handlers import (
     workout_start, exercise_choice, result_input, video_input,
-    workout_cancel, EXERCISE, RESULT, VIDEO, get_current_week
+    workout_cancel, EXERCISE, RESULT, VIDEO, COMMENT,
+    get_current_week, comment_input
 )
 
 # === НАСТРОЙКА ЛОГИРОВАНИЯ ===
@@ -88,14 +89,15 @@ Thread(target=run_http_server, daemon=True).start()
 init_db()
 logger.info("База данных готова к работе.")
 
-# ========== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ОТПРАВКИ КАТАЛОГА ==========
+# ========== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ОТПРАВКИ КАТАЛОГА (КНОПОЧНАЯ) ==========
 async def send_catalog_to_message(message):
-    """Отправляет каталог упражнений в указанное сообщение (для команд и колбэков)."""
+    """Отправляет каталог упражнений с кнопками."""
     current_week = get_current_week()
     exercises = get_all_exercises()
     if not exercises:
         await message.reply_text("Список упражнений пока пуст.")
         return
+
     permanent = []
     weekly = []
     for ex in exercises:
@@ -103,27 +105,61 @@ async def send_catalog_to_message(message):
             permanent.append(ex)
         else:
             weekly.append(ex)
+
     text = "📋 **Каталог упражнений**\n\n"
+    keyboard = []
+
     if permanent:
         text += "♾️ **Доступны всегда:**\n"
         for ex in permanent:
-            name, metric, points, difficulty = ex[1], ex[2], ex[3], ex[5]
-            metric_icon = "🔢" if metric == 'reps' else "⏱️"
-            text += f"{metric_icon} {name} — {points} баллов, уровень: {difficulty}\n"
+            name, points = ex[1], ex[3]
+            text += f"• {name} — {points} баллов\n"
+            keyboard.append([InlineKeyboardButton(name, callback_data=f"ex_{ex[0]}")])
         text += "\n"
+
     if weekly:
         text += "📅 **По неделям:**\n"
         for ex in weekly:
-            name, metric, points, week, difficulty = ex[1], ex[2], ex[3], ex[4], ex[5]
-            metric_icon = "🔢" if metric == 'reps' else "⏱️"
-            if week == current_week:
-                status = "✅ доступно сейчас"
-            elif week < current_week:
-                status = "⏳ прошлая неделя"
-            else:
-                status = f"🔜 будет на неделе {week}"
-            text += f"{metric_icon} {name} — {points} баллов, уровень: {difficulty} ({status})\n"
-    await message.reply_text(text, parse_mode='Markdown')
+            name, points, week = ex[1], ex[3], ex[4]
+            status = "✅ доступно сейчас" if week == current_week else f"🔜 неделя {week}" if week > current_week else "⏳ прошлая неделя"
+            text += f"• {name} — {points} баллов ({status})\n"
+            keyboard.append([InlineKeyboardButton(name, callback_data=f"ex_{ex[0]}")])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+
+# ========== ОБРАБОТЧИК ДЛЯ ВЫБОРА УПРАЖНЕНИЯ ИЗ КАТАЛОГА ==========
+async def exercise_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    ex_id = int(query.data.split('_')[1])
+    ex = get_exercise_by_id(ex_id)
+    if not ex:
+        await query.edit_message_text("Упражнение не найдено.")
+        return
+
+    _, name, description, metric, points, week, difficulty = ex
+    text = f"**{name}**\n"
+    if description:
+        text += f"{description}\n"
+    text += f"🏅 Баллы: {points}\n"
+    text += f"📏 Тип: {'повторения' if metric == 'reps' else 'время'}\n"
+    text += f"🎯 Уровень: {'Новички' if difficulty == 'beginner' else 'Профи'}\n"
+    if week != 0:
+        text += f"🗓️ Активно: неделя {week}\n"
+
+    keyboard = [[InlineKeyboardButton("✍️ Записать тренировку", callback_data=f"record_{ex_id}")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+
+async def record_from_catalog_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    ex_id = int(query.data.split('_')[1])
+    # Запоминаем выбранное упражнение
+    context.user_data['pending_exercise'] = ex_id
+    await query.edit_message_text("Теперь отправь команду /wod, чтобы записать это упражнение.")
+    # Альтернативно можно сразу запустить диалог, но проще оставить так, чтобы не менять ConversationHandler.
 
 # ========== ОСНОВНЫЕ ОБРАБОТЧИКИ КОМАНД ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -169,7 +205,6 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔄 Твоя личная история диалога очищена.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Справка теперь выводится с кнопками
     keyboard = [
         [InlineKeyboardButton("🏋️ Спорт", callback_data='help_sport')],
         [InlineKeyboardButton("📸 Фото", callback_data='help_photo')],
@@ -341,7 +376,6 @@ async def sport_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         elif data == 'sport_wod':
             await query.message.reply_text("Отправь команду /wod, чтобы записать тренировку.")
         elif data == 'sport_mystats':
-            # Показываем клавиатуру выбора периода
             keyboard = [
                 [InlineKeyboardButton("Сегодня", callback_data='stats_day'),
                  InlineKeyboardButton("Неделя", callback_data='stats_week')],
@@ -375,7 +409,6 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "🤖 Задать вопрос":
         await update.message.reply_text("Напиши свой вопрос — я отвечу.")
     elif text == "📊 Моя статистика":
-        # Показываем клавиатуру выбора периода
         keyboard = [
             [InlineKeyboardButton("Сегодня", callback_data='stats_day'),
              InlineKeyboardButton("Неделя", callback_data='stats_week')],
@@ -386,7 +419,6 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text("Выбери период для статистики:", reply_markup=reply_markup)
     elif text == "🏆 Рейтинг":
-        # Показываем клавиатуру выбора лиги
         keyboard = [
             [InlineKeyboardButton("Новички", callback_data='top_beginner'),
              InlineKeyboardButton("Профи", callback_data='top_pro')],
@@ -418,10 +450,13 @@ async def myhistory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     text = f"📋 **Твои последние {len(workouts)} тренировок:**\n\n"
     for w in workouts:
-        wid, name, result, video, date, is_best, typ = w
+        wid, name, result, video, date, is_best, typ, comment = w
         date_str = datetime.fromisoformat(date).strftime("%d.%m.%Y %H:%M")
         best_mark = " 🏆" if is_best else ""
-        text += f"• {date_str} — **{name}** ({typ}): {result} [ссылка]({video}){best_mark}\n"
+        line = f"• {date_str} — **{name}** ({typ}): {result} [ссылка]({video}){best_mark}"
+        if comment:
+            line += f"\n   💬 {comment}"
+        text += line + "\n"
         if len(text) > 3500:
             text += "\n...и ещё"
             break
@@ -521,6 +556,39 @@ async def top_league_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     league = query.data.split('_')[1]  # top_beginner или top_pro
     await top_command(update, context, league=league)
 
+# ========== УВЕДОМЛЕНИЯ И НАПОМИНАНИЯ ==========
+async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Устанавливает напоминание: /remind 20:00 Приседания"""
+    if not context.args:
+        await update.message.reply_text("Использование: /remind <время> <сообщение>\nНапример: /remind 20:00 Приседания")
+        return
+    # Парсим время и сообщение
+    time_str = context.args[0]
+    message = " ".join(context.args[1:])
+    if not message:
+        await update.message.reply_text("Укажи сообщение для напоминания.")
+        return
+    # Проверяем формат времени HH:MM
+    if not re.match(r'^\d{1,2}:\d{2}$', time_str):
+        await update.message.reply_text("Неверный формат времени. Используй ЧЧ:ММ (например, 20:00).")
+        return
+    try:
+        hour, minute = map(int, time_str.split(':'))
+        now = datetime.now()
+        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if target < now:
+            target = target + timedelta(days=1)
+        delta = (target - now).total_seconds()
+        # Планируем задачу
+        context.job_queue.run_once(send_reminder, delta, context={'chat_id': update.effective_chat.id, 'message': message})
+        await update.message.reply_text(f"Напоминание установлено на {time_str}: {message}")
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка: {e}")
+
+async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    await context.bot.send_message(chat_id=job.context['chat_id'], text=f"🔔 Напоминание: {job.context['message']}")
+
 # ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
     logger.info("MAIN: started")
@@ -545,6 +613,7 @@ def main():
     app.add_handler(CommandHandler("setlevel", setlevel_command))
     app.add_handler(CommandHandler("catalog", catalog_command))
     app.add_handler(CommandHandler("myhistory", myhistory_command))
+    app.add_handler(CommandHandler("remind", remind_command))  # новая команда
 
     # --- Диалог тренировок ---
     workout_conv = ConversationHandler(
@@ -553,6 +622,7 @@ def main():
             EXERCISE: [CallbackQueryHandler(exercise_choice, pattern='^ex_|^cancel$')],
             RESULT: [MessageHandler(filters.TEXT & ~filters.COMMAND, result_input)],
             VIDEO: [MessageHandler(filters.TEXT & ~filters.COMMAND, video_input)],
+            COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, comment_input)],
         },
         fallbacks=[CommandHandler('cancel', workout_cancel)],
     )
@@ -565,12 +635,16 @@ def main():
     app.add_handler(CallbackQueryHandler(help_callback, pattern='^help_'))
     app.add_handler(CallbackQueryHandler(stats_period_callback, pattern='^stats_'))
     app.add_handler(CallbackQueryHandler(top_league_callback, pattern='^top_'))
+    app.add_handler(CallbackQueryHandler(exercise_callback, pattern='^ex_'))  # для выбора упражнения из каталога
+    app.add_handler(CallbackQueryHandler(record_from_catalog_callback, pattern='^record_'))
 
     # --- Сообщения ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    # Запускаем JobQueue
+    app.job_queue.start()
     logger.info("🚀 Бот запущен...")
     app.run_polling(drop_pending_updates=True)
 
