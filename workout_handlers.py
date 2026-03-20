@@ -102,6 +102,22 @@ async def video_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("💬 Добавь комментарий к тренировке (можно пропустить, нажми /skip или просто отправь сообщение):")
     return COMMENT
 
+async def comment_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Пропускает ввод комментария."""
+    user_id = update.effective_user.id
+    exercise_id = context.user_data['exercise_id']
+    result_value = context.user_data['result_value']
+    video_link = context.user_data['video_link']
+    user_level = get_user_level(user_id)
+    # Сохраняем без комментария
+    add_workout(user_id, exercise_id, result_value, video_link, user_level, None)
+    await update.message.reply_text(
+        "✅ Тренировка успешно записана! Спасибо за честность.\n"
+        "Можешь посмотреть свои результаты командой /mystats, а таблицу лидеров — /top."
+    )
+    context.user_data.clear()
+    return ConversationHandler.END
+
 async def comment_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     comment = update.message.text
     if comment == '/skip':
