@@ -3,7 +3,7 @@ import logging
 import json
 import os
 import shutil  # добавь этот импорт в начало файла, если его нет
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,7 @@ def backup_database():
             logger.error(f"❌ Не удалось создать резервную копию: {e}")
     else:
         logger.info("База данных не найдена, резервная копия не создана.")
+
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -42,6 +43,23 @@ def init_db():
     if 'level' not in columns:
         cur.execute("ALTER TABLE users ADD COLUMN level TEXT DEFAULT 'beginner'")
         logger.info("Колонка 'level' добавлена в users.")
+
+    # Таблица для хранения баллов, начисленных по рейтингу
+    # Таблица для хранения баллов, начисленных по рейтингу
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS scoreboard (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            exercise_id INTEGER NOT NULL,
+            period_start TIMESTAMP NOT NULL,
+            period_end TIMESTAMP NOT NULL,
+            rank INTEGER NOT NULL,
+            points_awarded INTEGER NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(user_id),
+            FOREIGN KEY(exercise_id) REFERENCES exercises(id)
+        )
+    """)
+    logger.info("Таблица 'scoreboard' создана (если не существовала).")
 
     # Таблица упражнений
     cur.execute("""
@@ -404,3 +422,65 @@ def get_user_workouts(user_id, limit=20):
     rows = cur.fetchall()
     conn.close()
     return rows
+def recalculate_rankings(period_days=7):
+    """
+    Рассчитывает рейтинг по всем упражнениям за последние period_days дней.
+    Начисляет баллы: 1 место – 15, 2 место – 10, 3 место – 5, остальные – 0.
+    Результаты сохраняются в таблицу scoreboard.
+    """
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+
+    # Вычисляем дату начала периода
+    start_date = datetime.now() - timedelta(days=period_days)
+
+    # Получаем все упражнения
+    exercises = get_all_exercises()  # (id, name, metric, points, week, difficulty)
+    for ex in exercises:
+        ex_id = ex[0]
+        metric = ex[2]
+
+        # Для reps – больше повторений лучше (MAX)
+        if metric == 'reps':
+            query = """
+                SELECT user_id, MAX(CAST(result_value AS INTEGER)) as best
+                FROM workouts
+                WHERE exercise_id = ? AND performed_at >= ?
+                GROUP BY user_id
+                ORDER BY best DESC
+            """
+        else:  # time – меньше время лучше (MIN)
+            query = """
+                SELECT user_id, MIN(result_value) as best
+                FROM workouts
+                WHERE exercise_id = ? AND performed_at >= ?
+                GROUP BY user_id
+                ORDER BY best ASC
+            """
+        cur.execute(query, (ex_id, start_date))
+        results = cur.fetchall()
+
+        # Назначаем места
+        rankings = []
+        for i, (user_id, best) in enumerate(results):
+            if i == 0:
+                points = 15
+            elif i == 1:
+                points = 10
+            elif i == 2:
+                points = 5
+            else:
+                points = 0
+            rankings.append((user_id, ex_id, start_date, datetime.now(), i+1, points))
+
+        # Очищаем старые записи за этот период для данного упражнения
+        cur.execute("DELETE FROM scoreboard WHERE exercise_id = ? AND period_start = ?", (ex_id, start_date))
+        # Вставляем новые
+        cur.executemany("""
+            INSERT INTO scoreboard (user_id, exercise_id, period_start, period_end, rank, points_awarded)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, rankings)
+
+    conn.commit()
+    conn.close()
+    logger.info(f"Рейтинг пересчитан за период с {start_date} по {datetime.now()}")
