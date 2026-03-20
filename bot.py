@@ -601,9 +601,20 @@ async def test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
+    logger.info("MAIN: started")
     if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
+    logger.info("MAIN: token ok")
+    app = Application.builder().token(TOKEN).build()
+    logger.info("MAIN: app built")
 
+    # --- Обычные команды ---
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("menu", show_menu))
+    app.add_handler(CommandHandler("help", help_command))
+    # ... остальные команды ...
+    
+    # ... и так далее, после каждого важного блока
     app = Application.builder().token(TOKEN).build()
 
     # --- Обычные команды ---
