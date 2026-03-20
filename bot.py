@@ -570,13 +570,26 @@ async def stats_period_callback(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
     logger.info(f"DEBUG: stats_period_callback вызван с data = {query.data}")
     period = query.data.split('_')[1] if query.data != 'stats_all' else None
-    await mystats_command(update, context, period=period)
+    user_id = update.effective_user.id
+    pts, wods = get_user_stats(user_id, period)
+    period_text = f" за {period}" if period else " за всё время"
+    await query.message.reply_text(f"📊 Твоя статистика{period_text}:\n🏋️ Тренировок: {wods or 0}\n⭐ Баллов: {pts or 0}")
 
 async def top_league_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = updasync def top_league_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    league = query.data.split('_')[1]
-    await top_command(update, context, league=league)
+    league = query.data.split('_')[1]  # top_beginner или top_pro
+    user_id = update.effective_user.id
+    leaderboard = get_leaderboard(None, league)
+    if not leaderboard:
+        await query.message.reply_text("Нет данных.")
+        return
+    text = f"🏆 **Топ игроков ({'Новички' if league == 'beginner' else 'Профи'}):**\n"
+    for i, (uid, fname, uname, total) in enumerate(leaderboard, 1):
+        text += f"{i}. {fname or uname} — {total}\n"
+    await query.message.reply_text(text, parse_mode='Markdown')
+
 
 # ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
