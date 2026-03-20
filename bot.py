@@ -640,14 +640,14 @@ def main():
     app.add_handler(CallbackQueryHandler(test_callback))
 
     # Потом остальные с фильтрами
-    app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
-    app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
-    app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
+   # app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
+   # app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
+   # app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
 
     # --- Обработчики сообщений ---
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))  # сначала проверяем меню
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))  # потом всё остальное
+   # app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+   # app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))  # сначала проверяем меню
+   # app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))  # потом всё остальное
 
     logger.info("🚀 Бот запущен...")
     app.run_polling(drop_pending_updates=True)
