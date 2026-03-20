@@ -605,19 +605,12 @@ def main():
     if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
     logger.info("MAIN: token ok")
+
+    # Создаём приложение ОДИН раз
     app = Application.builder().token(TOKEN).build()
     logger.info("MAIN: app built")
 
-    # --- Обычные команды ---
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("menu", show_menu))
-    app.add_handler(CommandHandler("help", help_command))
-    # ... остальные команды ...
-    
-    # ... и так далее, после каждого важного блока
-    app = Application.builder().token(TOKEN).build()
-
-    # --- Обычные команды ---
+    # --- 1. Обычные команды ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", show_menu))
     app.add_handler(CommandHandler("help", help_command))
@@ -634,7 +627,7 @@ def main():
     app.add_handler(CommandHandler("catalog", catalog_command))
     app.add_handler(CommandHandler("myhistory", myhistory_command))
 
-    # --- ДИАЛОГ ТРЕНИРОВОК ---
+    # --- 2. Диалог тренировок (ConversationHandler) ---
     workout_conv = ConversationHandler(
         entry_points=[CommandHandler('wod', workout_start)],
         states={
@@ -646,19 +639,27 @@ def main():
     )
     app.add_handler(workout_conv)
 
-    # --- Обработчики колбэков ---
-    # Сначала тестовый (без pattern) — ловит всё
+    # --- 3. Обработчики колбэков ---
+    # Сначала тестовый (без pattern) — будет ловить всё (для отладки)
     app.add_handler(CallbackQueryHandler(test_callback))
 
-    # Потом остальные с фильтрами
-   # app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
-   # app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
-   # app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
+    # Потом остальные с фильтрами (пока закомментированы, будем включать по одному)
+    # app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
+    # app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
+    # app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
 
-    # --- Обработчики сообщений ---
-   # app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-   # app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))  # сначала проверяем меню
-   # app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))  # потом всё остальное
+    # --- 4. Обработчики сообщений ---
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    # --- 5. Запуск ---
     logger.info("🚀 Бот запущен...")
     app.run_polling(drop_pending_updates=True)
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        logger.exception("Критическая ошибка в main: %s", e)
+        raise
