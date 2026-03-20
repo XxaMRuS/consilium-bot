@@ -604,7 +604,7 @@ def main():
     app.add_handler(CommandHandler("myhistory", myhistory_command))
 
     # --- Диалог тренировок ---
-    workout_conv = ConversationHandler(
+        workout_conv = ConversationHandler(
         entry_points=[CommandHandler('wod', workout_start)],
         states={
             EXERCISE: [CallbackQueryHandler(exercise_choice, pattern='^ex_|^cancel$')],
