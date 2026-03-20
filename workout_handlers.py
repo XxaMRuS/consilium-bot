@@ -99,7 +99,6 @@ async def video_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return VIDEO
 
     context.user_data['video_link'] = video_link
-
     await update.message.reply_text("💬 Добавь комментарий к тренировке (можно пропустить, нажми /skip или просто отправь сообщение):")
     return COMMENT
 
