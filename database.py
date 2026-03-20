@@ -203,6 +203,15 @@ def get_exercises(active_only=True, week=None, difficulty=None):
     conn.close()
     return exercises
 
+def get_exercise_by_id(exercise_id):
+    """Возвращает упражнение по ID (id, name, description, metric, points, week, difficulty)."""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, description, metric, points, week, difficulty FROM exercises WHERE id = ?", (exercise_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row
+
 def get_all_exercises():
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
