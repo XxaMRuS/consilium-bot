@@ -584,6 +584,21 @@ async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"{i}. {name} — {total} баллов\n"
     await update.message.reply_text(text, parse_mode='Markdown')
 
+# ========== ВСПОМОГАТЕЛЬНЫЕ ОБРАБОТЧИКИ (определяем до main) ==========
+
+async def log_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Логирует все колбэки без отправки сообщений."""
+    query = update.callback_query
+    await query.answer()
+    logger.info(f"Callback received: {query.data}")
+    # Не отправляем сообщение пользователю, только логируем
+
+async def test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Тестовый обработчик для отладки кнопок."""
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text(f"Тест: получен data = {query.data}")
+
 # ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
     if not TOKEN:
@@ -605,7 +620,7 @@ def main():
     app.add_handler(CommandHandler("mystats", mystats_command))
     app.add_handler(CommandHandler("top", top_command))
     app.add_handler(CommandHandler("setlevel", setlevel_command))
-    app.add_handler(CommandHandler("catalog", catalog_command))  # новая команда
+    app.add_handler(CommandHandler("catalog", catalog_command))
     app.add_handler(CommandHandler("myhistory", myhistory_command))
 
     # --- ДИАЛОГ ТРЕНИРОВОК ---
@@ -620,35 +635,20 @@ def main():
     )
     app.add_handler(workout_conv)
 
-async def log_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Callback received: {update.callback_query.data}")
-    # Не отправляем сообщение, просто логируем
-
-    app.add_handler(CallbackQueryHandler(log_all_callbacks))
-
-async def test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.message.reply_text(f"Тест: получен data = {query.data}")
-
+    # --- Обработчики колбэков (порядок важен) ---
+    # Сначала самый общий (если нужен)
+    app.add_handler(CallbackQueryHandler(log_all_callbacks))  # будет логировать всё
+    # Затем тестовый (если нужен)
     app.add_handler(CallbackQueryHandler(test_callback))
-
-    # --- Обработчики колбэков ---
-   #  app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
-   #  app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
-   #  app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
+    # Потом остальные с фильтрами
+    app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
+    app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
+    app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
 
     # --- Обработчики сообщений ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))  # ← сначала проверяем меню
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))  # сначала проверяем меню
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))  # потом всё остальное
-    
+
     logger.info("🚀 Бот запущен...")
     app.run_polling(drop_pending_updates=True)
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        logger.exception("Критическая ошибка в main: %s", e)
-        raise
