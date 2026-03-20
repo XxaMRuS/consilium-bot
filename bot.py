@@ -592,7 +592,7 @@ async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
-    print("!!! MAIN CALLED !!!")   # временный отладочный принт
+    print("!!! MAIN CALLED !!!")
     logger.info("MAIN: started")
     if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
@@ -634,9 +634,8 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
     app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
-    # === ОТЛАДКА: раскомментировать, если нужно проверить, приходят ли колбэки вообще ===
-    # app.add_handler(CallbackQueryHandler(test_callback))
-    # === КОНЕЦ ОТЛАДКИ ===
+    # Отладочный обработчик (ловит всё, что не подошло выше) — раскомментирован
+    app.add_handler(CallbackQueryHandler(test_callback))
 
     # --- Обработчики сообщений ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
@@ -647,7 +646,6 @@ def main():
     print("🚀 Бот запущен...")
     logger.info("🚀 Бот запущен...")
     app.run_polling(drop_pending_updates=True)
-
 if __name__ == "__main__":
     try:
         main()
