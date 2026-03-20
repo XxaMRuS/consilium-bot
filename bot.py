@@ -646,7 +646,7 @@ def main():
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
 
 # Затем тестовый (без pattern) — ловит всё, что не подошло выше
-app.add_handler(CallbackQueryHandler(test_callback))
+    app.add_handler(CallbackQueryHandler(test_callback))
 
     # --- 4. Обработчики сообщений ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
