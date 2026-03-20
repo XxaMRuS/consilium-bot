@@ -636,13 +636,13 @@ def main():
     app.add_handler(workout_conv)
 
     # --- Обработчики колбэков ---
-# Сначала тестовый (без pattern) — ловит всё
-app.add_handler(CallbackQueryHandler(test_callback))
+    # Сначала тестовый (без pattern) — ловит всё
+    app.add_handler(CallbackQueryHandler(test_callback))
 
-# Потом остальные с фильтрами
-app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
-app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
-app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
+    # Потом остальные с фильтрами
+    app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
+    app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
+    app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
 
     # --- Обработчики сообщений ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
