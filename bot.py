@@ -169,26 +169,53 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔄 Твоя личная история диалога очищена.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    help_text = (
-        "🤖 **Доступные команды:**\n\n"
-        "🔹 `/start` - Запуск\n"
-        "🔹 `/menu` - Выбор эффекта для фото\n"
-        "🔹 `/stats` - Статистика AI\n"
-        "🔹 `/reset` - Очистить свою историю диалога\n"
-        "🔹 `/help` - Помощь\n"
-        "🔹 `/config` - Настройки AI (только админ)\n"
-        "🔹 `/wod` - Записать тренировку\n"
-        "🔹 `/catalog` - Каталог упражнений\n"
-        "🔹 `/mystats [day|week|month|year]` - Моя статистика\n"
-        "🔹 `/top [day|week|month|year] [beginner|pro]` - Таблица лидеров\n"
-        "🔹 `/setlevel <beginner|pro>` - Сменить уровень\n"
-        "🔹 `/listexercises` - Список упражнений (админ)\n"
-        "🔹 `/delexercise <id>` - Удалить упражнение (админ)\n"
-        "🔹 `/addexercise` - Добавить упражнение (админ)\n"
-        "🔹 `/load_exercises` - Загрузить из JSON (админ)\n\n"
-        "Просто отправь текст, чтобы спросить ИИ, или фото (после выбора стиля в /menu)."
+    # Справка теперь выводится с кнопками
+    keyboard = [
+        [InlineKeyboardButton("🏋️ Спорт", callback_data='help_sport')],
+        [InlineKeyboardButton("📸 Фото", callback_data='help_photo')],
+        [InlineKeyboardButton("📊 Статистика", callback_data='help_stats')],
+        [InlineKeyboardButton("🏆 Рейтинг", callback_data='help_top')],
+    ]
+    if is_admin(update):
+        keyboard.append([InlineKeyboardButton("⚙️ Админ", callback_data='help_admin')])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "🤖 **Помощь**\nВыбери раздел, чтобы узнать подробнее:",
+        parse_mode='Markdown', reply_markup=reply_markup
     )
-    await update.message.reply_text(help_text, parse_mode='Markdown')
+
+async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    if data == 'help_sport':
+        text = "🏋️ **Спорт**\n"
+        text += "/wod — записать тренировку\n"
+        text += "/catalog — каталог упражнений\n"
+        text += "/mystats — моя статистика\n"
+        text += "/setlevel — сменить уровень (новичок/профи)"
+    elif data == 'help_photo':
+        text = "📸 **Фото**\n"
+        text += "/menu — выбрать стиль и отправить фото.\n"
+        text += "Доступны стили: карандаш, аниме, сепия, хард-рок, пиксель, неон, масло, акварель, мультяшный."
+    elif data == 'help_stats':
+        text = "📊 **Статистика**\n"
+        text += "/mystats [day|week|month|year] — твоя статистика\n"
+        text += "/top [day|week|month|year] [beginner|pro] — таблица лидеров"
+    elif data == 'help_top':
+        text = "🏆 **Рейтинг**\n"
+        text += "/top — топ за всё время в твоей лиге\n"
+        text += "Можно добавить период (day, week, month, year) и лигу (beginner, pro)."
+    elif data == 'help_admin':
+        text = "⚙️ **Админ**\n"
+        text += "/config — настройка AI\n"
+        text += "/addexercise — добавить упражнение\n"
+        text += "/delexercise — удалить упражнение\n"
+        text += "/listexercises — список упражнений\n"
+        text += "/load_exercises — загрузить из JSON"
+    else:
+        text = "Информация не найдена."
+    await query.edit_message_text(text, parse_mode='Markdown')
 
 # ========== КОНФИГУРАЦИЯ КОНСИЛИУМА (ТОЛЬКО ДЛЯ АДМИНА) ==========
 async def config_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -314,7 +341,16 @@ async def sport_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         elif data == 'sport_wod':
             await query.message.reply_text("Отправь команду /wod, чтобы записать тренировку.")
         elif data == 'sport_mystats':
-            await query.message.reply_text("Твоя статистика (используй команду /mystats):")
+            # Показываем клавиатуру выбора периода
+            keyboard = [
+                [InlineKeyboardButton("Сегодня", callback_data='stats_day'),
+                 InlineKeyboardButton("Неделя", callback_data='stats_week')],
+                [InlineKeyboardButton("Месяц", callback_data='stats_month'),
+                 InlineKeyboardButton("Год", callback_data='stats_year')],
+                [InlineKeyboardButton("За всё время", callback_data='stats_all')],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.message.reply_text("Выбери период для статистики:", reply_markup=reply_markup)
         elif data == 'sport_setlevel':
             await query.message.reply_text("Чтобы сменить уровень, используй /setlevel beginner или /setlevel pro.")
         elif data == 'back_to_main':
@@ -339,9 +375,24 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "🤖 Задать вопрос":
         await update.message.reply_text("Напиши свой вопрос — я отвечу.")
     elif text == "📊 Моя статистика":
-        await mystats_command(update, context)
+        # Показываем клавиатуру выбора периода
+        keyboard = [
+            [InlineKeyboardButton("Сегодня", callback_data='stats_day'),
+             InlineKeyboardButton("Неделя", callback_data='stats_week')],
+            [InlineKeyboardButton("Месяц", callback_data='stats_month'),
+             InlineKeyboardButton("Год", callback_data='stats_year')],
+            [InlineKeyboardButton("За всё время", callback_data='stats_all')],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("Выбери период для статистики:", reply_markup=reply_markup)
     elif text == "🏆 Рейтинг":
-        await top_command(update, context)
+        # Показываем клавиатуру выбора лиги
+        keyboard = [
+            [InlineKeyboardButton("Новички", callback_data='top_beginner'),
+             InlineKeyboardButton("Профи", callback_data='top_pro')],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("Выбери лигу для таблицы лидеров:", reply_markup=reply_markup)
     elif text == "⚙️ Админ":
         if is_admin(update):
             await update.message.reply_text("Админ-панель:\n/config — настройки AI\n/addexercise — добавить упражнение\n/listexercises — список упражнений\n/load_exercises — загрузить из JSON")
@@ -435,34 +486,40 @@ async def setlevel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if set_user_level(user_id, context.args[0]):
         await update.message.reply_text(f"✅ Уровень изменён на {context.args[0]}.")
 
-# ========== СТАТИСТИКА (доработанная) ==========
+# ========== СТАТИСТИКА И РЕЙТИНГ ==========
 async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE, period=None):
     user_id = update.effective_user.id
-    # Если период передан через аргумент (из команды) или через колбэк
     if period is None and context.args:
         period = context.args[0]
     pts, wods = get_user_stats(user_id, period)
     period_text = f" за {period}" if period else " за всё время"
     await update.message.reply_text(f"📊 Твоя статистика{period_text}:\n🏋️ Тренировок: {wods or 0}\n⭐ Баллов: {pts or 0}")
 
-async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    level = get_user_level(update.effective_user.id)
-    leaderboard = get_leaderboard(None, level)
+async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE, league=None):
+    user_id = update.effective_user.id
+    if league is None:
+        league = get_user_level(user_id)
+    leaderboard = get_leaderboard(None, league)
     if not leaderboard:
         await update.message.reply_text("Нет данных.")
         return
-    text = "🏆 **Топ игроков:**\n"
+    text = f"🏆 **Топ игроков ({'Новички' if league == 'beginner' else 'Профи'}):**\n"
     for i, (uid, fname, uname, total) in enumerate(leaderboard, 1):
         text += f"{i}. {fname or uname} — {total}\n"
     await update.message.reply_text(text, parse_mode='Markdown')
 
-# ========== ОБРАБОТЧИК КНОПОК СТАТИСТИКИ ==========
+# ========== ОБРАБОТЧИКИ КНОПОК ==========
 async def stats_period_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     period = query.data.split('_')[1] if query.data != 'stats_all' else None
-    # Заменяем исходное сообщение с кнопками на результат
     await mystats_command(update, context, period=period)
+
+async def top_league_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    league = query.data.split('_')[1]  # top_beginner или top_pro
+    await top_command(update, context, league=league)
 
 # ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
@@ -505,8 +562,9 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
     app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^sport_|^back_to_main$'))
-    # Обработчик для кнопок выбора периода статистики
+    app.add_handler(CallbackQueryHandler(help_callback, pattern='^help_'))
     app.add_handler(CallbackQueryHandler(stats_period_callback, pattern='^stats_'))
+    app.add_handler(CallbackQueryHandler(top_league_callback, pattern='^top_'))
 
     # --- Сообщения ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
