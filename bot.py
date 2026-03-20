@@ -599,15 +599,15 @@ async def test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     await query.message.reply_text(f"Тест: получен data = {query.data}")
 
-# ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
-    print("!!! MAIN CALLED !!!")   # это будет в логах Render
-    logger.info("MAIN: started")
+    print("!!! MAIN CALLED !!!")
     logger.info("MAIN: started")
     if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
+    print("TOKEN OK")
     logger.info("MAIN: token ok")
     app = Application.builder().token(TOKEN).build()
+    print("APP BUILT")
     logger.info("MAIN: app built")
 
     # --- Обычные команды ---
@@ -645,13 +645,16 @@ def main():
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
     app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^(sport_|back_to_main)$'))
     # Потом универсальный тестовый (для отладки) — в самом конце
-  # app.add_handler(CallbackQueryHandler(test_callback))
+    # app.add_handler(CallbackQueryHandler(test_callback))  # закомментирован, не мешает
 
     # --- Обработчики сообщений ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    print("HANDLERS ADDED")
+    logger.info("MAIN: handlers added")
+    print("🚀 Бот запущен...")
     logger.info("🚀 Бот запущен...")
     app.run_polling(drop_pending_updates=True)
     
