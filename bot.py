@@ -412,23 +412,23 @@ async def sport_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
 async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    if text == "🏋️ Спорт":
+    if "Спорт" in text:
         await sport_menu(update, context)
-    elif text == "📸 Фото":
+    elif "Фото" in text:
         await show_menu(update, context)
-    elif text == "❌ Отмена":
+    elif "Отмена" in text:
         context.user_data.clear()
         await update.message.reply_text("Все активные действия отменены. Можете начать заново.")
-    elif text == "🤖 Задать вопрос":
+    elif "Задать вопрос" in text:
         await update.message.reply_text("Напиши свой вопрос — я отвечу.")
-    elif text == "🏆 Рейтинг":
+    elif "Рейтинг" in text:
         keyboard = [
             [InlineKeyboardButton("Новички", callback_data='top_beginner'),
              InlineKeyboardButton("Профи", callback_data='top_pro')],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text("Выбери лигу для таблицы лидеров:", reply_markup=reply_markup)
-    elif text == "⚙️ Админ":
+    elif "Админ" in text:
         if is_admin(update):
             await update.message.reply_text("Админ-панель:\n/config — настройки AI\n/addexercise — добавить упражнение\n/listexercises — список упражнений\n/load_exercises — загрузить из JSON")
         else:
