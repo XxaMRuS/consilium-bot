@@ -389,7 +389,7 @@ async def sport_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         elif data == 'sport_wod':
             await query.message.reply_text("Отправь команду /wod, чтобы записать тренировку.")
         elif data == 'sport_mystats':
-            await mystats_command(update, context)
+            await mystats_command(query.message, context)
         elif data == 'sport_setlevel':
             keyboard = [
                 [InlineKeyboardButton("Новичок (beginner)", callback_data="setlevel_beginner")],
@@ -540,10 +540,12 @@ async def setlevel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Выбери уровень:", reply_markup=reply_markup)
 
 # ========== СТАТИСТИКА И РЕЙТИНГ ==========
-async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    
+# ========== СТАТИСТИКА И РЕЙТИНГ ==========
+async def mystats_command(message, context: ContextTypes.DEFAULT_TYPE):
+    user_id = message.chat.id
     total = get_user_scoreboard_total(user_id)
-    await update.message.reply_text(f"🏆 Твои баллы (по рейтингу): {total}")
+    await message.reply_text(f"🏆 Твои баллы (по рейтингу): {total}")
     
 async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     leaderboard = get_leaderboard_from_scoreboard()
@@ -589,7 +591,7 @@ def main():
 
     app = Application.builder().token(TOKEN).build()
 
-    # --- Команды ---
+     # --- Команды ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", show_menu))
     app.add_handler(CommandHandler("help", help_command))
@@ -600,7 +602,7 @@ def main():
     app.add_handler(CommandHandler("delexercise", delete_exercise_command))
     app.add_handler(CommandHandler("listexercises", list_exercises_command))
     app.add_handler(CommandHandler("load_exercises", load_exercises_command))
-    app.add_handler(CommandHandler("mystats", mystats_command))
+    app.add_handler(CommandHandler("mystats", lambda u,c: mystats_command(u.message, c)))  # ← через лямбду
     app.add_handler(CommandHandler("top", top_command))
     app.add_handler(CommandHandler("setlevel", setlevel_command))
     app.add_handler(CommandHandler("catalog", catalog_command))
