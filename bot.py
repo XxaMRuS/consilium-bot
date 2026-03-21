@@ -32,7 +32,7 @@ from database import (
     get_all_exercises, delete_exercise,
     get_user_level, set_user_level,
     get_user_workouts, get_exercise_by_id,
-    backup_database  # ← добавить
+    backup_database, recalculate_rankings
 )
 from workout_handlers import (
     workout_start, exercise_choice, result_input, video_input,
@@ -522,6 +522,14 @@ async def load_exercises_command(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("✅ Загружено.")
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка: {e}")
+        
+async def recalc_rankings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await update.message.reply_text("⛔ Нет прав.")
+        return
+    await update.message.reply_text("⏳ Начинаю пересчёт рейтинга...")
+    recalculate_rankings(period_days=7)
+    await update.message.reply_text("✅ Рейтинг пересчитан. Баллы начислены.")
 
 async def setlevel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -585,6 +593,14 @@ async def top_league_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         text += f"{i}. {fname or uname} — {total}\n"
     await query.message.reply_text(text, parse_mode='Markdown')
 
+async def recalc_rankings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await update.message.reply_text("⛔ Нет прав.")
+        return
+    await update.message.reply_text("⏳ Начинаю пересчёт рейтинга...")
+    recalculate_rankings(period_days=7)
+    await update.message.reply_text("✅ Рейтинг пересчитан. Баллы начислены.")
+
 
 # ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
@@ -610,6 +626,7 @@ def main():
     app.add_handler(CommandHandler("setlevel", setlevel_command))
     app.add_handler(CommandHandler("catalog", catalog_command))
     app.add_handler(CommandHandler("myhistory", myhistory_command))
+    app.add_handler(CommandHandler("recalc_rankings", recalc_rankings_command))
 
     # --- Диалог тренировок ---
     workout_conv = ConversationHandler(
