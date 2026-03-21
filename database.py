@@ -4,15 +4,6 @@ import json
 import os
 import shutil  # добавь этот импорт в начало файла, если его нет
 from datetime import datetime, timedelta
-from database import (
-    init_db, add_user, get_exercises, add_workout, add_exercise,
-    set_exercise_week, get_user_stats, get_leaderboard,
-    get_all_exercises, delete_exercise,
-    get_user_level, set_user_level,
-    get_user_workouts, get_exercise_by_id,
-    backup_database, recalculate_rankings,
-    get_user_scoreboard_total, get_leaderboard_from_scoreboard
-)
 
 logger = logging.getLogger(__name__)
 
