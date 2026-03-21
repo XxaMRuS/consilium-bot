@@ -4,6 +4,15 @@ import json
 import os
 import shutil  # добавь этот импорт в начало файла, если его нет
 from datetime import datetime, timedelta
+from database import (
+    init_db, add_user, get_exercises, add_workout, add_exercise,
+    set_exercise_week, get_user_stats, get_leaderboard,
+    get_all_exercises, delete_exercise,
+    get_user_level, set_user_level,
+    get_user_workouts, get_exercise_by_id,
+    backup_database, recalculate_rankings,
+    get_user_scoreboard_total, get_leaderboard_from_scoreboard
+)
 
 logger = logging.getLogger(__name__)
 
@@ -422,6 +431,32 @@ def get_user_workouts(user_id, limit=20):
     rows = cur.fetchall()
     conn.close()
     return rows
+
+def get_user_scoreboard_total(user_id):
+    """Сумма всех баллов пользователя из scoreboard."""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("SELECT SUM(points_awarded) FROM scoreboard WHERE user_id = ?", (user_id,))
+    total = cur.fetchone()[0]
+    conn.close()
+    return total or 0
+
+def get_leaderboard_from_scoreboard(limit=10):
+    """Топ пользователей по сумме баллов из scoreboard."""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT u.user_id, u.first_name, u.username, SUM(s.points_awarded) as total
+        FROM scoreboard s
+        JOIN users u ON s.user_id = u.user_id
+        GROUP BY u.user_id
+        ORDER BY total DESC
+        LIMIT ?
+    """, (limit,))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+    
 def recalculate_rankings(period_days=7):
     """
     Рассчитывает рейтинг по всем упражнениям за последние period_days дней.
