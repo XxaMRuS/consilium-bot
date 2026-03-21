@@ -389,15 +389,7 @@ async def sport_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         elif data == 'sport_wod':
             await query.message.reply_text("Отправь команду /wod, чтобы записать тренировку.")
         elif data == 'sport_mystats':
-            keyboard = [
-                [InlineKeyboardButton("Сегодня", callback_data='stats_day'),
-                 InlineKeyboardButton("Неделя", callback_data='stats_week')],
-                [InlineKeyboardButton("Месяц", callback_data='stats_month'),
-                 InlineKeyboardButton("Год", callback_data='stats_year')],
-                [InlineKeyboardButton("За всё время", callback_data='stats_all')],
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.message.reply_text("Выбери период для статистики:", reply_markup=reply_markup)
+            await mystats_command(update, context)
         elif data == 'sport_setlevel':
             keyboard = [
                 [InlineKeyboardButton("Новичок (beginner)", callback_data="setlevel_beginner")],
@@ -632,8 +624,8 @@ def main():
     # --- Колбэки ---
     app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
-    app.add_handler(CallbackQueryHandler(stats_period_callback, pattern='^stats_'))
-    app.add_handler(CallbackQueryHandler(top_league_callback, pattern='^top_'))
+    # app.add_handler(CallbackQueryHandler(stats_period_callback, pattern='^stats_'))
+    # app.add_handler(CallbackQueryHandler(top_league_callback, pattern='^top_'))
     app.add_handler(CallbackQueryHandler(setlevel_callback, pattern='^setlevel_'))
     app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^sport_|^back_to_main$'))
     app.add_handler(CallbackQueryHandler(help_callback, pattern='^help_'))
