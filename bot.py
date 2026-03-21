@@ -32,7 +32,8 @@ from database import (
     get_all_exercises, delete_exercise,
     get_user_level, set_user_level,
     get_user_workouts, get_exercise_by_id,
-    backup_database, recalculate_rankings
+    backup_database, recalculate_rankings,
+    get_user_scoreboard_total, get_leaderboard_from_scoreboard
 )
 from workout_handlers import (
     workout_start, exercise_choice, result_input, video_input,
@@ -547,25 +548,20 @@ async def setlevel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Выбери уровень:", reply_markup=reply_markup)
 
 # ========== СТАТИСТИКА И РЕЙТИНГ ==========
-async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE, period=None):
+async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if period is None and context.args:
-        period = context.args[0]
-    pts, wods = get_user_stats(user_id, period)
-    period_text = f" за {period}" if period else " за всё время"
-    await update.message.reply_text(f"📊 Твоя статистика{period_text}:\n🏋️ Тренировок: {wods or 0}\n⭐ Баллов: {pts or 0}")
-
-async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE, league=None):
-    user_id = update.effective_user.id
-    if league is None:
-        league = get_user_level(user_id)
-    leaderboard = get_leaderboard(None, league)
+    total = get_user_scoreboard_total(user_id)
+    await update.message.reply_text(f"🏆 Твои баллы (по рейтингу): {total}")
+    
+async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    leaderboard = get_leaderboard_from_scoreboard()
     if not leaderboard:
         await update.message.reply_text("Нет данных.")
         return
-    text = f"🏆 **Топ игроков ({'Новички' if league == 'beginner' else 'Профи'}):**\n"
+    text = "🏆 **Топ игроков (по баллам рейтинга):**\n"
     for i, (uid, fname, uname, total) in enumerate(leaderboard, 1):
-        text += f"{i}. {fname or uname} — {total}\n"
+        name = fname or uname or f"User{uid}"
+        text += f"{i}. {name} — {total}\n"
     await update.message.reply_text(text, parse_mode='Markdown')
 
 # ========== ОБРАБОТЧИКИ КНОПОК ==========
@@ -592,15 +588,6 @@ async def top_league_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     for i, (uid, fname, uname, total) in enumerate(leaderboard, 1):
         text += f"{i}. {fname or uname} — {total}\n"
     await query.message.reply_text(text, parse_mode='Markdown')
-
-async def recalc_rankings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update):
-        await update.message.reply_text("⛔ Нет прав.")
-        return
-    await update.message.reply_text("⏳ Начинаю пересчёт рейтинга...")
-    recalculate_rankings(period_days=7)
-    await update.message.reply_text("✅ Рейтинг пересчитан. Баллы начислены.")
-
 
 # ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
