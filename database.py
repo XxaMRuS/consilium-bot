@@ -43,8 +43,17 @@ def init_db():
     if 'level' not in columns:
         cur.execute("ALTER TABLE users ADD COLUMN level TEXT DEFAULT 'beginner'")
         logger.info("Колонка 'level' добавлена в users.")
+    # Таблица для хранения системных настроек (последний пересчёт и т.п.)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS system_config (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    # Запишем начальное значение, если его нет
+    cur.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('last_recalc', '0')")    
 
-    # Таблица для хранения баллов, начисленных по рейтингу
+    
     # Таблица для хранения баллов, начисленных по рейтингу
     cur.execute("""
         CREATE TABLE IF NOT EXISTS scoreboard (
@@ -510,3 +519,22 @@ def recalculate_rankings(period_days=7):
     conn.commit()
     conn.close()
     logger.info(f"Рейтинг пересчитан за период с {start_date} по {datetime.now()}")
+
+def get_last_recalc():
+    """Возвращает дату последнего пересчёта рейтинга (datetime) или None, если ещё не было."""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("SELECT value FROM system_config WHERE key = 'last_recalc'")
+    row = cur.fetchone()
+    conn.close()
+    if row and row[0] != '0':
+        return datetime.fromisoformat(row[0])
+    return None
+
+def set_last_recalc(date):
+    """Сохраняет дату последнего пересчёта."""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("UPDATE system_config SET value = ? WHERE key = 'last_recalc'", (date.isoformat(),))
+    conn.commit()
+    conn.close()
