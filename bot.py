@@ -11,6 +11,16 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
 from telegram import ReplyKeyboardMarkup, KeyboardButton
 from urllib.parse import urlparse, parse_qs
+from database import (
+    init_db, add_user, get_exercises, add_workout, add_exercise,
+    set_exercise_week, get_user_stats, get_leaderboard,
+    get_all_exercises, delete_exercise,
+    get_user_level, set_user_level,
+    get_user_workouts, get_exercise_by_id,
+    backup_database, recalculate_rankings,
+    get_user_scoreboard_total, get_leaderboard_from_scoreboard,
+    add_complex, add_complex_exercise, get_all_complexes, get_complex_by_id, get_complex_exercises
+)
 
 # === ИМПОРТЫ ДЛЯ ТЕЛЕГРАМА И КНОПОК ===
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -27,21 +37,15 @@ from photo_processor import (
     convert_to_oil, convert_to_watercolor, convert_to_cartoon
 )
 
-# === ИМПОРТЫ ДЛЯ БАЗЫ ДАННЫХ И ТРЕНИРОВОК ===
-from database import (
-    init_db, add_user, get_exercises, add_workout, add_exercise,
-    set_exercise_week, get_user_stats, get_leaderboard,
-    get_all_exercises, delete_exercise,
-    get_user_level, set_user_level,
-    get_user_workouts, get_exercise_by_id,
-    backup_database, recalculate_rankings,
-    get_user_scoreboard_total, get_leaderboard_from_scoreboard
-)
+# === ИМПОРТЫ ДЛЯ ВОРКАУТ-ХЕНДЛЕРОВ ===
 from workout_handlers import (
     workout_start, exercise_choice, result_input, video_input,
     workout_cancel, EXERCISE, RESULT, VIDEO, COMMENT,
     get_current_week, comment_input, comment_skip
 )
+
+# Состояния для диалога выполнения комплекса
+COMPLEX_RESULT, COMPLEX_VIDEO, COMPLEX_COMMENT = range(10, 13)
 
 # === НАСТРОЙКА ЛОГИРОВАНИЯ ===
 logging.basicConfig(
@@ -109,8 +113,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 # === ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ===
 init_db()
 logger.info("База данных готова к работе.")
-backup_database()  # ← добавить
-
+backup_database()
 
 # ========== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ОТПРАВКИ КАТАЛОГА (КНОПОЧНАЯ) ==========
 async def send_catalog_to_message(message):
@@ -136,7 +139,6 @@ async def send_catalog_to_message(message):
         text += "♾️ **Доступны всегда**\n"
         for ex in permanent:
             name, points = ex[1], ex[3]
-            # Определяем иконку по типу (из базы, но у нас нет категории – добавим эмодзи по названию)
             icon = get_exercise_icon(name)
             text += f"• {icon} **{name}** – {points} баллов\n"
             keyboard.append([InlineKeyboardButton(f"{icon} {name}", callback_data=f"ex_{ex[0]}")])
@@ -160,7 +162,6 @@ async def send_catalog_to_message(message):
     await message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
 
 def get_exercise_icon(name):
-    """Возвращает эмодзи в зависимости от названия упражнения (простая логика)."""
     name_lower = name.lower()
     if "присед" in name_lower:
         return "🏋️‍♂️"
@@ -180,11 +181,12 @@ def get_exercise_icon(name):
         return "🚶"
     else:
         return "📌"
+
 # ========== ОБРАБОТЧИК ДЛЯ ВЫБОРА УРОВНЯ ==========
 async def setlevel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    level = query.data.split('_')[1]  # setlevel_beginner или setlevel_pro
+    level = query.data.split('_')[1]
     user_id = update.effective_user.id
     if set_user_level(user_id, level):
         await query.edit_message_text(f"✅ Уровень изменён на «{level}».")
@@ -521,8 +523,8 @@ async def add_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYP
     try:
         args = shlex.split(args_part)
         if len(args) < 4:
-             await update.message.reply_text("❌ Нужно минимум 4 аргумента.")
-             return
+            await update.message.reply_text("❌ Нужно минимум 4 аргумента.")
+            return
         name, metric, desc, points = args[0], args[1], args[2], int(args[3])
         week = int(args[4]) if len(args) > 4 and args[4].isdigit() else 0
         diff = args[5] if len(args) > 5 else 'beginner'
@@ -558,7 +560,7 @@ async def load_exercises_command(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("✅ Загружено.")
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка: {e}")
-        
+
 async def recalc_rankings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
         await update.message.reply_text("⛔ Нет прав.")
@@ -586,9 +588,9 @@ async def setlevel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def mystats_command(message, context: ContextTypes.DEFAULT_TYPE):
     user_id = message.chat.id
     total = get_user_scoreboard_total(user_id)
-    workouts = get_user_workouts(user_id, limit=1000)  # получаем все тренировки
+    workouts = get_user_workouts(user_id, limit=1000)
     workout_count = len(workouts)
-    target = 100  # цель (можно потом настроить)
+    target = 100
     bar_len = int(20 * total / target) if target > 0 else 0
     bar = "▰" * bar_len + "▱" * (20 - bar_len)
     text = f"🏆 **Твоя статистика**\n\n"
@@ -642,6 +644,166 @@ async def top_league_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         text += f"{i}. {fname or uname} — {total}\n"
     await query.message.reply_text(text, parse_mode='Markdown')
 
+# ========== КОМАНДЫ ДЛЯ КОМПЛЕКСОВ ==========
+async def add_complex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await update.message.reply_text("⛔ Нет прав.")
+        return
+    try:
+        text = update.message.text.split(maxsplit=1)[1]
+        args = shlex.split(text)
+        if len(args) < 4:
+            await update.message.reply_text("Использование: /addcomplex <название> <описание> <тип> <баллы>\nТип: for_time или for_reps")
+            return
+        name, description, type_, points = args[0], args[1], args[2], int(args[3])
+        if type_ not in ('for_time', 'for_reps'):
+            await update.message.reply_text("Тип должен быть for_time или for_reps")
+            return
+        complex_id = add_complex(name, description, type_, points)
+        await update.message.reply_text(f"✅ Комплекс «{name}» создан с ID {complex_id}.\nТеперь добавь упражнения командой /addcomplexexercise {complex_id} <id_упражнения> <повторения>")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка: {e}")
+
+async def add_complex_exercise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await update.message.reply_text("⛔ Нет прав.")
+        return
+    try:
+        args = context.args
+        if len(args) != 3:
+            await update.message.reply_text("Использование: /addcomplexexercise <complex_id> <exercise_id> <reps>")
+            return
+        complex_id = int(args[0])
+        exercise_id = int(args[1])
+        reps = int(args[2])
+        complex_data = get_complex_by_id(complex_id)
+        if not complex_data:
+            await update.message.reply_text("Комплекс не найден.")
+            return
+        ex = get_exercise_by_id(exercise_id)
+        if not ex:
+            await update.message.reply_text("Упражнение не найдено.")
+            return
+        add_complex_exercise(complex_id, exercise_id, reps)
+        await update.message.reply_text(f"✅ Упражнение «{ex[1]}» добавлено в комплекс {complex_data[1]} с {reps} повторениями.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка: {e}")
+
+async def complexes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    complexes = get_all_complexes()
+    if not complexes:
+        await update.message.reply_text("Комплексов пока нет.")
+        return
+    text = "🏋️ **Доступные комплексы:**\n\n"
+    for c in complexes:
+        text += f"ID: {c[0]} — **{c[1]}**\n"
+        text += f"   Тип: {'Время' if c[3] == 'for_time' else 'Повторения'}\n"
+        text += f"   Баллы: {c[4]}\n\n"
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def complex_detail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        complex_id = int(context.args[0])
+    except:
+        await update.message.reply_text("Использование: /complex <id>")
+        return
+    complex_data = get_complex_by_id(complex_id)
+    if not complex_data:
+        await update.message.reply_text("Комплекс не найден.")
+        return
+    exercises = get_complex_exercises(complex_id)
+    if not exercises:
+        await update.message.reply_text("В комплексе нет упражнений.")
+        return
+    text = f"**{complex_data[1]}**\n{complex_data[2]}\n\n"
+    text += f"Тип: {'Время' if complex_data[3] == 'for_time' else 'Повторения'}\n"
+    text += f"Баллы: {complex_data[4]}\n\n"
+    text += "**Упражнения:**\n"
+    for ex in exercises:
+        text += f"• {ex[3]} — {ex[4]} повторений\n"
+    keyboard = [[InlineKeyboardButton("✅ Выполнить комплекс", callback_data=f"do_complex_{complex_id}")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+
+# ========== ДИАЛОГ ВЫПОЛНЕНИЯ КОМПЛЕКСА ==========
+async def do_complex_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    complex_id = int(query.data.split('_')[2])
+    context.user_data['current_complex_id'] = complex_id
+    complex_data = get_complex_by_id(complex_id)
+    if not complex_data:
+        await query.edit_message_text("Комплекс не найден.")
+        return ConversationHandler.END
+    context.user_data['complex_name'] = complex_data[1]
+    context.user_data['complex_points'] = complex_data[4]
+    await query.edit_message_text(f"Выполняем комплекс **{complex_data[1]}**.\nВведите результат:\n- Если тип 'время', укажи в формате ММ:СС (например, 03:45)\n- Если тип 'повторения', введи количество.")
+    return COMPLEX_RESULT
+
+async def complex_result_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    result_text = update.message.text.strip()
+    complex_id = context.user_data['current_complex_id']
+    complex_data = get_complex_by_id(complex_id)
+    complex_type = complex_data[3]
+    if complex_type == 'for_time':
+        try:
+            parts = result_text.split(':')
+            if len(parts) == 2:
+                minutes = int(parts[0])
+                seconds = int(parts[1])
+                total_seconds = minutes * 60 + seconds
+                context.user_data['complex_result_value'] = result_text
+                context.user_data['complex_result_seconds'] = total_seconds
+            else:
+                raise ValueError
+        except:
+            await update.message.reply_text("Неверный формат. Используй ММ:СС, например 05:30")
+            return COMPLEX_RESULT
+    else:
+        try:
+            reps = int(result_text)
+            context.user_data['complex_result_value'] = str(reps)
+            context.user_data['complex_result_reps'] = reps
+        except:
+            await update.message.reply_text("Введи целое число повторений.")
+            return COMPLEX_RESULT
+    await update.message.reply_text("Отлично! Теперь отправь ссылку на видео (YouTube, Vimeo, или любой URL) подтверждения выполнения.\nИли нажми /skip, чтобы пропустить.")
+    return COMPLEX_VIDEO
+
+async def complex_video_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    video_url = update.message.text.strip()
+    context.user_data['complex_video'] = video_url
+    await update.message.reply_text("Можешь добавить комментарий к тренировке (необязательно).\nИли нажми /skip, чтобы пропустить.")
+    return COMPLEX_COMMENT
+
+async def complex_comment_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    comment = update.message.text.strip()
+    context.user_data['complex_comment'] = comment
+    await save_complex_workout(update, context)
+    return ConversationHandler.END
+
+async def complex_comment_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['complex_comment'] = None
+    await save_complex_workout(update, context)
+    return ConversationHandler.END
+
+async def save_complex_workout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    complex_id = context.user_data['current_complex_id']
+    complex_name = context.user_data['complex_name']
+    points = context.user_data['complex_points']
+    result = context.user_data['complex_result_value']
+    video = context.user_data.get('complex_video', '')
+    comment = context.user_data.get('complex_comment')
+    user_level = get_user_level(user_id)
+
+    # Сохраняем тренировку (передаём complex_id, exercise_id = None)
+    add_workout(user_id, exercise_id=None, complex_id=complex_id, result_value=result, video_link=video, user_level=user_level, comment=comment)
+    await update.message.reply_text(f"✅ Тренировка «{complex_name}» засчитана! +{points} баллов.")
+    # Очистка
+    for key in ['current_complex_id', 'complex_name', 'complex_points', 'complex_result_value', 'complex_result_seconds', 'complex_result_reps', 'complex_video', 'complex_comment']:
+        context.user_data.pop(key, None)
+
 # ========== ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА ==========
 def main():
     logger.info("MAIN: started")
@@ -678,6 +840,24 @@ def main():
     app.add_handler(CommandHandler("catalog", catalog_command))
     app.add_handler(CommandHandler("myhistory", myhistory_command))
     app.add_handler(CommandHandler("recalc_rankings", recalc_rankings_command))
+    app.add_handler(CommandHandler("addcomplex", add_complex_command))
+    app.add_handler(CommandHandler("addcomplexexercise", add_complex_exercise_command))
+    app.add_handler(CommandHandler("complexes", complexes_command))
+    app.add_handler(CommandHandler("complex", complex_detail_command))
+
+    # --- Диалог выполнения комплекса ---
+    complex_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(do_complex_start, pattern='^do_complex_\\d+$')],
+        states={
+            COMPLEX_RESULT: [MessageHandler(filters.TEXT & ~filters.COMMAND, complex_result_input)],
+            COMPLEX_VIDEO: [MessageHandler(filters.TEXT & ~filters.COMMAND, complex_video_input),
+                            CommandHandler('skip', complex_comment_skip)],
+            COMPLEX_COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, complex_comment_input),
+                              CommandHandler('skip', complex_comment_skip)],
+        },
+        fallbacks=[CommandHandler('cancel', workout_cancel)],
+    )
+    app.add_handler(complex_conv)
 
     # --- Диалог тренировок ---
     workout_conv = ConversationHandler(
