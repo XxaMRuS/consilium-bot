@@ -95,7 +95,7 @@ backup_database()  # ← добавить
 
 # ========== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ОТПРАВКИ КАТАЛОГА (КНОПОЧНАЯ) ==========
 async def send_catalog_to_message(message):
-    """Отправляет каталог упражнений с кнопками."""
+    """Отправляет каталог упражнений с кнопками (красивая версия)."""
     current_week = get_current_week()
     exercises = get_all_exercises()
     if not exercises:
@@ -105,33 +105,62 @@ async def send_catalog_to_message(message):
     permanent = []
     weekly = []
     for ex in exercises:
-        if ex[4] == 0:
+        if ex[4] == 0:  # week = 0
             permanent.append(ex)
         else:
             weekly.append(ex)
 
-    text = "📋 **Каталог упражнений**\n\n"
+    text = "📋 **КАТАЛОГ УПРАЖНЕНИЙ**\n\n"
     keyboard = []
 
     if permanent:
-        text += "♾️ **Доступны всегда:**\n"
+        text += "♾️ **Доступны всегда**\n"
         for ex in permanent:
             name, points = ex[1], ex[3]
-            text += f"• {name} — {points} баллов\n"
-            keyboard.append([InlineKeyboardButton(name, callback_data=f"ex_{ex[0]}")])
+            # Определяем иконку по типу (из базы, но у нас нет категории – добавим эмодзи по названию)
+            icon = get_exercise_icon(name)
+            text += f"• {icon} **{name}** – {points} баллов\n"
+            keyboard.append([InlineKeyboardButton(f"{icon} {name}", callback_data=f"ex_{ex[0]}")])
         text += "\n"
 
     if weekly:
-        text += "📅 **По неделям:**\n"
+        text += "📅 **По неделям**\n"
         for ex in weekly:
             name, points, week = ex[1], ex[3], ex[4]
-            status = "✅ доступно сейчас" if week == current_week else f"🔜 неделя {week}" if week > current_week else "⏳ прошлая неделя"
-            text += f"• {name} — {points} баллов ({status})\n"
-            keyboard.append([InlineKeyboardButton(name, callback_data=f"ex_{ex[0]}")])
+            icon = get_exercise_icon(name)
+            if week == current_week:
+                status = "✅ доступно сейчас"
+            elif week < current_week:
+                status = "⏳ прошлая неделя"
+            else:
+                status = f"🔜 будет на неделе {week}"
+            text += f"• {icon} **{name}** – {points} баллов ({status})\n"
+            keyboard.append([InlineKeyboardButton(f"{icon} {name}", callback_data=f"ex_{ex[0]}")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
 
+def get_exercise_icon(name):
+    """Возвращает эмодзи в зависимости от названия упражнения (простая логика)."""
+    name_lower = name.lower()
+    if "присед" in name_lower:
+        return "🏋️‍♂️"
+    elif "берпи" in name_lower or "бурпи" in name_lower:
+        return "💥"
+    elif "отжим" in name_lower:
+        return "💪"
+    elif "подтяг" in name_lower:
+        return "🤸"
+    elif "бег" in name_lower or "кросс" in name_lower:
+        return "🏃"
+    elif "тяга" in name_lower or "становая" in name_lower:
+        return "🏋️"
+    elif "складка" in name_lower or "пресс" in name_lower:
+        return "🧘"
+    elif "ходьба" in name_lower or "стойка" in name_lower:
+        return "🚶"
+    else:
+        return "📌"
 # ========== ОБРАБОТЧИК ДЛЯ ВЫБОРА УРОВНЯ ==========
 async def setlevel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
