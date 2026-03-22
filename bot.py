@@ -564,22 +564,38 @@ async def setlevel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Выбери уровень:", reply_markup=reply_markup)
 
 # ========== СТАТИСТИКА И РЕЙТИНГ ==========
-    
-# ========== СТАТИСТИКА И РЕЙТИНГ ==========
 async def mystats_command(message, context: ContextTypes.DEFAULT_TYPE):
     user_id = message.chat.id
     total = get_user_scoreboard_total(user_id)
-    await message.reply_text(f"🏆 Твои баллы (по рейтингу): {total}")
-    
+    workouts = get_user_workouts(user_id, limit=1000)  # получаем все тренировки
+    workout_count = len(workouts)
+    target = 100  # цель (можно потом настроить)
+    bar_len = int(20 * total / target) if target > 0 else 0
+    bar = "▰" * bar_len + "▱" * (20 - bar_len)
+    text = f"🏆 **Твоя статистика**\n\n"
+    text += f"🏋️ Тренировок: {workout_count}\n"
+    text += f"⭐ Баллов: {total}\n"
+    text += f"📈 Прогресс до следующего уровня: {bar} {total}/{target}"
+    await message.reply_text(text, parse_mode='Markdown')
+
 async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     leaderboard = get_leaderboard_from_scoreboard()
     if not leaderboard:
         await update.message.reply_text("Нет данных.")
         return
-    text = "🏆 **Топ игроков (по баллам рейтинга):**\n"
-    for i, (uid, fname, uname, total) in enumerate(leaderboard, 1):
+
+    max_points = leaderboard[0][3] if leaderboard else 1
+    text = "🏆 **ТОП ИГРОКОВ**\n\n"
+    medals = ["🥇", "🥈", "🥉"]
+    for i, (uid, fname, uname, total) in enumerate(leaderboard[:10], 1):
         name = fname or uname or f"User{uid}"
-        text += f"{i}. {name} — {total}\n"
+        if i <= 3:
+            medal = medals[i-1]
+        else:
+            medal = f"{i}."
+        bar_len = int(20 * total / max_points) if max_points > 0 else 0
+        bar = "▰" * bar_len + "▱" * (20 - bar_len)
+        text += f"{medal} **{name}** — {total} баллов\n   {bar} {total}\n\n"
     await update.message.reply_text(text, parse_mode='Markdown')
 
 # ========== ОБРАБОТЧИКИ КНОПОК ==========
