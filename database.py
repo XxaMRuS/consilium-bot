@@ -101,12 +101,20 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,
             description TEXT,
+            type TEXT NOT NULL,               -- 'for_time' or 'for_reps'
             points INTEGER DEFAULT 0,
             week INTEGER DEFAULT 0,
             difficulty TEXT DEFAULT 'beginner',
             is_active BOOLEAN DEFAULT 1
         )
     """)
+    logger.info("Таблица 'complexes' создана (с полем type).")
+    # Если база существовала и поле type не было добавлено — добавим
+    cur.execute("PRAGMA table_info(complexes)")
+    columns = [col[1] for col in cur.fetchall()]
+    if 'type' not in columns:
+        cur.execute("ALTER TABLE complexes ADD COLUMN type TEXT DEFAULT 'for_time'")
+        logger.info("Колонка 'type' добавлена в complexes.")
     logger.info("Таблица 'complexes' создана (если не существовала).")
 
     # Связь комплексов с упражнениями
@@ -196,17 +204,17 @@ def load_exercises_from_json_if_empty():
     else:
         logger.info("В базе уже есть упражнения, автозагрузка пропущена.")
 
-def add_workout(user_id, exercise_id, result_value, video_link, user_level, comment=None, metric=None):
+def add_workout(user_id, exercise_id=None, complex_id=None, result_value="", video_link="", user_level="beginner", comment=None, metric=None):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO workouts (user_id, exercise_id, result_value, video_link, user_level, comment)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (user_id, exercise_id, result_value, video_link, user_level, comment))
+        INSERT INTO workouts (user_id, exercise_id, complex_id, result_value, video_link, user_level, comment)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (user_id, exercise_id, complex_id, result_value, video_link, user_level, comment))
     workout_id = cur.lastrowid
     conn.commit()
     conn.close()
-    if metric is not None:
+    if metric is not None and exercise_id is not None:
         update_personal_best(user_id, exercise_id, result_value, metric)
     return workout_id
 
@@ -538,3 +546,63 @@ def set_last_recalc(date):
     cur.execute("UPDATE system_config SET value = ? WHERE key = 'last_recalc'", (date.isoformat(),))
     conn.commit()
     conn.close()
+
+def add_complex(name, description, type_, points, week=0, difficulty='beginner'):
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO complexes (name, description, type, points, week, difficulty)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (name, description, type_, points, week, difficulty))
+        complex_id = cur.lastrowid
+        conn.commit()
+        return complex_id
+    except sqlite3.IntegrityError:
+        logger.error(f"Комплекс с именем {name} уже существует.")
+        return None
+    finally:
+        conn.close()
+
+def add_complex_exercise(complex_id, exercise_id, reps, order_index=None):
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    if order_index is None:
+        cur.execute("SELECT COALESCE(MAX(order_index), 0) + 1 FROM complex_exercises WHERE complex_id = ?", (complex_id,))
+        order_index = cur.fetchone()[0]
+    cur.execute("""
+        INSERT INTO complex_exercises (complex_id, exercise_id, reps, order_index)
+        VALUES (?, ?, ?, ?)
+    """, (complex_id, exercise_id, reps, order_index))
+    conn.commit()
+    conn.close()
+
+def get_all_complexes():
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, description, type, points, week, difficulty FROM complexes ORDER BY id")
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+def get_complex_by_id(complex_id):
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, description, type, points, week, difficulty FROM complexes WHERE id = ?", (complex_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+def get_complex_exercises(complex_id):
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ce.id, ce.exercise_id, e.name, e.metric, ce.reps
+        FROM complex_exercises ce
+        JOIN exercises e ON ce.exercise_id = e.id
+        WHERE ce.complex_id = ?
+        ORDER BY ce.order_index
+    """, (complex_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
