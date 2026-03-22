@@ -3,12 +3,14 @@ import logging
 import asyncio
 import re
 import json
+import threading
 import shlex
 from datetime import datetime
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
 from telegram import ReplyKeyboardMarkup, KeyboardButton
+from urllib.parse import urlparse, parse_qs
 
 # === ИМПОРТЫ ДЛЯ ТЕЛЕГРАМА И КНОПОК ===
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -73,19 +75,36 @@ def is_admin(update: Update) -> bool:
 # === ПРОСТОЙ HTTP-СЕРВЕР ДЛЯ RENDER ===
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path.startswith('/cron'):
+            query = parse_qs(urlparse(self.path).query)
+            key = query.get('key', [None])[0]
+            secret = os.getenv("CRON_SECRET", "default_secret")
+            if key == secret:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"OK - recalc check started")
+                threading.Thread(target=self._check_and_recalc).start()
+            else:
+                self.send_response(403)
+                self.end_headers()
+                self.wfile.write(b"Forbidden")
+            return
+
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")
-    def log_message(self, format, *args):
-        pass
 
-def run_http_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    logger.info(f"HTTP-сервер запущен на порту {port}")
-    server.serve_forever()
-
-Thread(target=run_http_server, daemon=True).start()
+    def _check_and_recalc(self):
+        from database import get_last_recalc, set_last_recalc, recalculate_rankings
+        now = datetime.now()
+        last = get_last_recalc()
+        if last is None or (now - last).days >= 7:
+            logger.info("Запускаю еженедельный пересчёт рейтинга по расписанию")
+            recalculate_rankings(period_days=7)
+            set_last_recalc(now)
+            logger.info("Еженедельный пересчёт рейтинга завершён")
+        else:
+            logger.info("Еженедельный пересчёт рейтинга не требуется (прошло меньше 7 дней)")
 
 # === ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ===
 init_db()
