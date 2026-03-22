@@ -648,9 +648,20 @@ def main():
     if not TOKEN:
         raise ValueError("Забыли TELEGRAM_BOT_TOKEN!")
 
+    # --- Запуск HTTP-сервера в фоне ---
+    def start_http():
+        port = int(os.environ.get('PORT', 10000))
+        httpd = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+        logger.info(f"✅ HTTP сервер запущен на порту {port}")
+        httpd.serve_forever()
+
+    http_thread = threading.Thread(target=start_http, daemon=True)
+    http_thread.start()
+
+    # --- Инициализация бота ---
     app = Application.builder().token(TOKEN).build()
 
-     # --- Команды ---
+    # --- Команды ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", show_menu))
     app.add_handler(CommandHandler("help", help_command))
@@ -661,7 +672,7 @@ def main():
     app.add_handler(CommandHandler("delexercise", delete_exercise_command))
     app.add_handler(CommandHandler("listexercises", list_exercises_command))
     app.add_handler(CommandHandler("load_exercises", load_exercises_command))
-    app.add_handler(CommandHandler("mystats", lambda u,c: mystats_command(u.message, c)))  # ← через лямбду
+    app.add_handler(CommandHandler("mystats", lambda u,c: mystats_command(u.message, c)))
     app.add_handler(CommandHandler("top", top_command))
     app.add_handler(CommandHandler("setlevel", setlevel_command))
     app.add_handler(CommandHandler("catalog", catalog_command))
@@ -699,6 +710,7 @@ def main():
 
     logger.info("🚀 Бот запущен...")
     app.run_polling(drop_pending_updates=True)
+
 
 if __name__ == "__main__":
     try:
