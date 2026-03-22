@@ -422,12 +422,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif "Задать вопрос" in text:
         await update.message.reply_text("Напиши свой вопрос — я отвечу.")
     elif "Рейтинг" in text:
-        keyboard = [
-            [InlineKeyboardButton("Новички", callback_data='top_beginner'),
-             InlineKeyboardButton("Профи", callback_data='top_pro')],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("Выбери лигу для таблицы лидеров:", reply_markup=reply_markup)
+        await top_command(update, context)
     elif "Админ" in text:
         if is_admin(update):
             await update.message.reply_text("Админ-панель:\n/config — настройки AI\n/addexercise — добавить упражнение\n/listexercises — список упражнений\n/load_exercises — загрузить из JSON")
@@ -627,7 +622,6 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler, pattern='^(sketch|anime|sepia|hardrock|pixel|neon|oil|watercolor|cartoon)$'))
     app.add_handler(CallbackQueryHandler(config_callback_handler, pattern="^toggle_"))
     # app.add_handler(CallbackQueryHandler(stats_period_callback, pattern='^stats_'))
-    # app.add_handler(CallbackQueryHandler(top_league_callback, pattern='^top_'))
     app.add_handler(CallbackQueryHandler(setlevel_callback, pattern='^setlevel_'))
     app.add_handler(CallbackQueryHandler(sport_callback_handler, pattern='^sport_|^back_to_main$'))
     app.add_handler(CallbackQueryHandler(help_callback, pattern='^help_'))
