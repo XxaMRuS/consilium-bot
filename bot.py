@@ -93,7 +93,22 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(b"Forbidden")
             return
-
+def do_HEAD(self):
+        """Обрабатывает HEAD-запросы (используется мониторингом)."""
+        if self.path.startswith('/cron'):
+            query = parse_qs(urlparse(self.path).query)
+            key = query.get('key', [None])[0]
+            secret = os.getenv("CRON_SECRET", "default_secret")
+            if key == secret:
+                self.send_response(200)
+                self.end_headers()
+                return
+            else:
+                self.send_response(403)
+                self.end_headers()
+                return
+        self.send_response(200)
+        self.end_headers()
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")
