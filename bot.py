@@ -93,8 +93,8 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(b"Forbidden")
             return
-def do_HEAD(self):
-        """Обрабатывает HEAD-запросы (используется мониторингом)."""
+            
+    def do_GET(self):
         if self.path.startswith('/cron'):
             query = parse_qs(urlparse(self.path).query)
             key = query.get('key', [None])[0]
@@ -102,17 +102,19 @@ def do_HEAD(self):
             if key == secret:
                 self.send_response(200)
                 self.end_headers()
-                return
+                self.wfile.write(b"OK - recalc check started")
+                threading.Thread(target=self._check_and_recalc).start()
             else:
                 self.send_response(403)
                 self.end_headers()
-                return
-        self.send_response(200)
-        self.end_headers()
+                self.wfile.write(b"Forbidden")
+            return
+
+        # Для всех остальных путей
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")
-
+        
     def _check_and_recalc(self):
         from database import get_last_recalc, set_last_recalc, recalculate_rankings
         now = datetime.now()
